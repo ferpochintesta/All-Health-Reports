@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <style>
+      :root { --logo-url: url("https://drive.google.com/thumbnail?id=1jZZrYpD-vlcDRassgz2rSc-4PaA-7sgK&sz=w800"); }
+      body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f6; padding: 20px; color: #333; }
+      .container { max-width: 650px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+      h2 { color: #2c3e50; text-align: center; }
+      
+      .module-buttons { display: flex; justify-content: center; gap: 10px; margin-bottom: 20px; flex-wrap: wrap;}
+      button { padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; transition: background 0.3s; font-size: 14px;}
+      .btn-active { background-color: #3498db; color: white; }
+      .btn-inactive { background-color: #ecf0f1; color: #7f8c8d; }
+      .btn-inactive:hover { background-color: #bdc3c7; }
+      
+      .form-group { margin-bottom: 15px; }
+      label { display: block; margin-bottom: 5px; font-weight: bold; font-size: 14px;}
+      input, select { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; font-size: 14px;}
+      
+      .schedule-container { display: none; background-color: #fcfcfc; padding: 15px; border: 1px dashed #bdc3c7; border-radius: 4px; margin-bottom: 15px;}
+      .schedule-row { display: flex; gap: 10px; margin-bottom: 10px; align-items: center; }
+      .schedule-row select { flex: 1; }
+      
+      .btn-submit { background-color: #2ecc71; color: white; width: 100%; padding: 12px; margin-top: 10px; font-size: 16px;}
+      .btn-submit:hover { background-color: #27ae60; }
+      .btn-submit:disabled { background-color: #95a5a6; cursor: not-allowed; }
+      
+      #result { margin-top: 25px; display: none; }
+      .report-card { border: 1px solid #e1e8ed; border-radius: 6px; padding: 20px; }
+      .section-title { font-size: 16px; margin: 15px 0 5px 0; border-bottom: 2px solid; padding-bottom: 3px; display: inline-block; }
+      .title-calls { color: #2980b9; border-color: #2980b9; }
+      .title-sms { color: #27ae60; border-color: #27ae60; }
+      .title-insights { color: #8e44ad; border-color: #8e44ad; }
+      .title-gaps { color: #c0392b; border-color: #c0392b; }
+      ul { margin: 5px 0 15px 20px; padding: 0; line-height: 1.6; }
+      
+      .day-group { margin-bottom: 15px; }
+      .day-header { background: #ecf0f1; padding: 6px 12px; font-weight: bold; border-radius: 4px; color: #2c3e50; font-size: 14px; margin-bottom: 8px;}
+      .gap-item { margin-left: 10px; padding: 6px 10px; border-left: 3px solid #e74c3c; background: #fdf2f0; margin-bottom: 5px; font-size: 13px; color: #c0392b;}
+      
+      .alert-msg { padding: 15px; border-radius: 4px; }
+      .alert-error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+
+      .report-logo-web, .report-logo-print { background-image: var(--logo-url); background-size: contain; background-repeat: no-repeat; background-position: center; width: 100%; aspect-ratio: 3 / 1; margin: 0 auto; display: block; }
+      .report-logo-web { max-width: 180px; margin-bottom: 10px; }
+      .report-logo-print { max-width: 280px; margin-bottom: 20px; display: none; }
+      .page-break { display: none; }
+
+      .editable-ai { font-size: 14px; line-height: 1.6; color: #333; padding: 10px; background: #fff; border: 1px dashed #bdc3c7; border-radius: 4px; transition: border 0.3s; }
+      .editable-ai:focus { border: 1px solid #8e44ad; outline: none; box-shadow: 0 0 5px rgba(142, 68, 173, 0.3); }
+
+      @media print {
+        body { -webkit-print-color-adjust: exact; print-color-adjust: exact; max-width: 100% !important; width: auto !important; background: white !important; margin: 0; padding: 0;}
+        #filterForm, .alert-msg, button, .ai-edit-hint, .hide-on-print, .module-buttons, hr { display: none !important; }
+        @page { margin: 1cm; size: auto; }
+        .container, .report-card, .dashboard-container { box-shadow: none !important; border: none !important; margin: 0 !important; padding: 0 !important; width: 100% !important; max-width: 100% !important; overflow: hidden !important; }
+        canvas, img, svg { max-width: 100% !important; height: auto !important; object-fit: contain; }
+        .page-break { display: block; page-break-after: always; }
+        .report-card, #aiSection { page-break-inside: avoid; }
+        .editable-ai { border: none !important; background: transparent !important; padding: 0 !important; }
+        .report-card { margin-bottom: 30px !important; }
+        h3 { margin-top: 15px !important; }
+        #chartsContainer { 
+          text-align: center !important; 
+          page-break-inside: avoid !important; /* Evita que el contenedor se parta a la mitad */
+        }
+        
+        /* Reduce el margen de 40px a 15px entre gráficas solo al imprimir */
+        #chartsContainer > div {
+          margin-bottom: 15px !important; 
+        }
+        
+        /* Limita la altura máxima de cada gráfica para que quepan las 3 */
+        #chartsContainer canvas { 
+          margin: 0 auto !important; 
+          display: block !important; 
+          max-height: 230px !important; /* Altura tope ajustada */
+          width: auto !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div style="text-align: center; margin-bottom: 25px;">
+        <div class="report-logo-web" aria-label="All Health Logo"></div>
+        <h2 class="hide-on-print" style="margin-top: 10px; color: #2c3e50;">Performance Phone/Message Reports</h2>
+      </div>
+      
+      <div class="module-buttons hide-on-print">
+        <button id="btnModGlobal" class="btn-active" type="button" onclick="switchModule('global')">🌍 Global & Office</button>
+        <button id="btnModTeams" class="btn-inactive" type="button" onclick="switchModule('teams')">👥 Teams</button>
+        <button id="btnModEmployee" class="btn-inactive" type="button" onclick="switchModule('employee')">👤 Employee</button>
+      </div>
+      <hr class="hide-on-print">
+
+      <form id="filterForm" onsubmit="event.preventDefault(); startProcess('standard');">
+        <input type="hidden" id="reportMode" name="reportMode" value="global">
+
+        <div id="teamsGroup" class="form-group" style="display: none;">
+          <label id="teamLabel" for="teamFilter">Select Team</label>
+          <select id="teamFilter" name="teamFilter">
+            <option value="">Select a team...</option>
+          </select>
+        </div>
+
+        <div id="locationGroup" class="form-group" style="display: block;">
+          <label for="locationFilter">Office / Sector</label>
+          <select id="locationFilter" name="locationFilter">
+            <option value="All">🌍 All Locations (Global)</option>
+            <option value="Hackensack">Hackensack</option>
+            <option value="Paramus">Paramus</option>
+            <option value="Paterson">Paterson</option>
+            <option value="83 Summit Cardio">83 Summit Cardio</option>
+            <option value="Englewood Cliffs">Englewood Cliffs</option>
+            <option value="Rutherford">Rutherford</option>
+            <option value="Rutherford Spa">Rutherford Spa</option>
+            <option value="Westwood Spa">Westwood Spa</option>
+            <option value="Maywood">Maywood</option>
+          </select>
+        </div>
+
+        <div id="employeeGroup" class="form-group" style="display: none;">
+          <label for="employeeEmail">Employee Name or Email</label>
+          <input type="text" id="employeeEmail" name="employeeEmail" placeholder="e.g., Name, Last Name, or Email address...">
+        </div>
+
+        <div class="form-group">
+          <label for="dateRange">Report Period (Max 31 days)</label>
+          <input type="text" id="dateRange" name="dateRange" placeholder="Select Start and End dates..." required style="background-color: #fff; cursor: pointer;">
+        </div>
+
+        <div class="form-group">
+          <label for="channel">Channel to Evaluate</label>
+          <select id="channel" name="channel">
+            <option value="calls">Phone Calls</option>
+            <option value="sms">Messages (SMS)</option>
+            <option value="both" selected>Both (Calls and SMS)</option>
+          </select>
+        </div>
+
+        <div id="scheduleSection" style="display: none;">
+          <div style="margin-bottom: 15px; text-align: right;">
+            <a href="#" id="toggleScheduleBtn" onclick="toggleScheduleBox(event)" style="color: #3498db; text-decoration: none; font-size: 14px; font-weight: bold;">➕ Set Employee Schedule (Optional)</a>
+          </div>
+          <input type="hidden" id="useSchedule" name="useSchedule" value="false">
+          <div id="scheduleBox" class="schedule-container">
+            <p style="margin-top: 0; font-size: 13px; color: #7f8c8d;"><strong>Shift Schedule:</strong> Select official start, end, and lunch times.</p>
+            <div class="form-group" style="margin-bottom: 15px; border-bottom: 1px solid #eee; padding-bottom: 15px;">
+              <label>Expected Work Days</label>
+              <div style="display: flex; gap: 15px; flex-wrap: wrap; font-size: 13px; margin-top: 5px;">
+                <label><input type="checkbox" name="wd_1" value="true"> Mon</label>
+                <label><input type="checkbox" name="wd_2" value="true"> Tue</label>
+                <label><input type="checkbox" name="wd_3" value="true"> Wed</label>
+                <label><input type="checkbox" name="wd_4" value="true"> Thu</label>
+                <label><input type="checkbox" name="wd_5" value="true"> Fri</label>
+                <label><input type="checkbox" name="wd_6" value="true"> Sat</label>
+                <label><input type="checkbox" name="wd_0" value="true"> Sun</label>
+              </div>
+            </div>
+            <div class="form-group" style="margin-bottom: 10px;">
+              <label>Weekday Shift</label>
+              <div class="schedule-row"><select id="wdStart" name="wdStart"></select> <span style="color:#7f8c8d; font-size:12px;">TO</span> <select id="wdEnd" name="wdEnd"></select></div>
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label>Weekend Shift</label>
+              <div class="schedule-row"><select id="weStart" name="weStart"></select> <span style="color:#7f8c8d; font-size:12px;">TO</span> <select id="weEnd" name="weEnd"></select></div>
+            </div>
+            <div class="form-group" style="margin-top: 15px; border-top: 1px solid #eee; padding-top: 15px;">
+              <label>Lunch Time (1 Hour grace period)</label>
+              <div class="schedule-row">
+                <div style="flex: 1;"><span style="font-size:12px; color:#7f8c8d;">Weekday Lunch</span><select id="wdLunch" name="wdLunch"></select></div>
+                <div style="flex: 1;"><span style="font-size:12px; color:#7f8c8d;">Weekend Lunch</span><select id="weLunch" name="weLunch"></select></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 15px;">
+          <button type="button" class="btn-submit" id="btnStandard" onclick="startProcess('standard')" style="flex: 1; background-color: #95a5a6;">📄 Report Only</button>
+          <button type="button" class="btn-submit" id="btnCharts" onclick="startProcess('charts')" style="flex: 1; background-color: #34495e;">📊 + Charts</button>
+          <button type="button" class="btn-submit" id="btnAI" onclick="startProcess('ai')" style="flex: 1; background-color: #8e44ad;">🧠 + AI & Charts</button>
+        </div>
+      </form>
+
+      <div id="result"></div>
+    </div>
+
+    <script>
+      function initTimeSelects() {
+        let options = '<option value="">--</option>';
+        for (let i = 7; i <= 23; i++) {
+          let ampm = i >= 12 ? 'PM' : 'AM';
+          let hr = i % 12 || 12;
+          options += `<option value="${i}">${hr}:00 ${ampm}</option>`;
+        }
+        ['wdStart', 'wdEnd', 'weStart', 'weEnd', 'wdLunch', 'weLunch'].forEach(id => { document.getElementById(id).innerHTML = options; });
+
+        const today = new Date();
+        const firstDay = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+        const lastDay = new Date(today.getFullYear(), today.getMonth(), 0);
+
+        flatpickr("#dateRange", {
+            mode: "range",
+            dateFormat: "Y-m-d",
+            defaultDate: [firstDay, lastDay], // Se auto-llena con el mes pasado
+            maxDate: "today", // Opcional: Evita que seleccionen fechas del futuro
+            onChange: function(selectedDates, dateStr, instance) {
+                // Validación en tiempo real: Si eligen más de 31 días, les avisa y borra
+                if (selectedDates.length === 2) {
+                    const diffTime = Math.abs(selectedDates[1] - selectedDates[0]);
+                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                    if (diffDays > 31) {
+                        alert("For performance reasons, the date range cannot exceed 31 days.");
+                        instance.clear();
+                    }
+                }
+            }
+        });
+      }
+      initTimeSelects();
+
+      function switchModule(mode) {
+        document.getElementById('reportMode').value = mode;
+        const btnGlobal = document.getElementById('btnModGlobal');
+        const btnTeams = document.getElementById('btnModTeams');
+        const btnEmployee = document.getElementById('btnModEmployee');
+        
+        const locGroup = document.getElementById('locationGroup');
+        const empGroup = document.getElementById('employeeGroup');
+        const teamsGroup = document.getElementById('teamsGroup');
+        const schedSec = document.getElementById('scheduleSection');
+        const empInput = document.getElementById('employeeEmail');
+
+        btnGlobal.className = 'btn-inactive'; btnTeams.className = 'btn-inactive'; btnEmployee.className = 'btn-inactive';
+        locGroup.style.display = 'none'; empGroup.style.display = 'none'; teamsGroup.style.display = 'none'; schedSec.style.display = 'none'; empInput.required = false;
+
+        if (mode === 'global') {
+          btnGlobal.className = 'btn-active'; locGroup.style.display = 'block';
+        } else if (mode === 'teams') {
+          btnTeams.className = 'btn-active'; teamsGroup.style.display = 'block';
+          if(!window.teamsLoaded) {
+            document.getElementById('teamLabel').innerHTML = "Select Team <span style='color:#e67e22;'>(🔄 Loading teams from Database...)</span>";
+            google.script.run.withSuccessHandler(populateTeams).getTeamsFromSheet();
+          }
+        } else {
+          btnEmployee.className = 'btn-active'; empGroup.style.display = 'block'; schedSec.style.display = 'block'; empInput.required = true;
+        }
+        document.getElementById('result').style.display = 'none';
+      }
+      document.getElementById('employeeEmail').required = false;
+
+      function populateTeams(response) {
+        const label = document.getElementById('teamLabel');
+        if(response.status === 'error') { label.innerHTML = `Select Team <span style='color:red;'>(${response.message})</span>`; return; }
+        let html = `<option value="">Select a team...</option>`;
+        for(let t in response.data) html += `<option value="${t}">${t} (${response.data[t].length} members)</option>`;
+        document.getElementById('teamFilter').innerHTML = html;
+        label.innerHTML = "Select Team"; window.teamsLoaded = true;
+      }
+
+      function toggleScheduleBox(e) {
+        if (e) e.preventDefault();
+        const box = document.getElementById('scheduleBox'); const btn = document.getElementById('toggleScheduleBtn'); const useSched = document.getElementById('useSchedule');
+        if (box.style.display === 'none' || box.style.display === '') { box.style.display = 'block'; btn.innerHTML = "➖ Hide Employee Schedule"; useSched.value = "true"; } 
+        else { box.style.display = 'none'; btn.innerHTML = "➕ Set Employee Schedule (Optional)"; useSched.value = "false"; }
+      }
+
+      function startProcess(mode) {
+        const form = document.getElementById('filterForm');
+        if (form.reportMode.value === 'employee' && !form.employeeEmail.value.trim()) { alert("Please enter an Employee Name or Email."); return; }
+        if (form.reportMode.value === 'teams' && !form.teamFilter.value) { alert("Please select a Team."); return; }
+
+        // EXTRACCIÓN Y CORTE DEL NUEVO CALENDARIO
+        const dateRangeVal = document.getElementById('dateRange').value;
+        const dates = dateRangeVal.split(" to ");
+        if (dates.length !== 2) { 
+            alert("Please select a complete date range (Start and End date)."); 
+            return; 
+        }
+        const finalStartDate = dates[0];
+        const finalEndDate = dates[1];
+
+        const resultDiv = document.getElementById('result');
+        ['btnStandard', 'btnCharts', 'btnAI'].forEach(id => document.getElementById(id).disabled = true);
+        const loadingText = (mode === 'ai') ? "🧠 Gemini AI is analyzing... (Please wait 15-20 seconds)" : "Processing Data...";
+        resultDiv.style.display = 'block';
+        resultDiv.innerHTML = `<div class='alert-msg' style='background-color:#e8f4f8; color:#2980b9; font-weight:bold; text-align:center; padding: 20px; border: 1px solid #bce8f1;'>${loadingText}</div>`;
+
+        // ACTUALIZAMOS EL PAYLOAD CON LAS FECHAS CORTADAS
+        const formPayload = {
+          reportMode: form.reportMode.value, teamFilter: form.teamFilter.value, locationFilter: form.locationFilter.value,
+          employeeEmail: form.employeeEmail.value, 
+          startDate: finalStartDate, // <-- Usamos la fecha cortada
+          endDate: finalEndDate,     // <-- Usamos la fecha cortada
+          channel: form.channel.value, useSchedule: form.useSchedule.value,
+          wdStart: form.wdStart.value, wdEnd: form.wdEnd.value, weStart: form.weStart.value, weEnd: form.weEnd.value,
+          wdLunch: form.wdLunch.value, weLunch: form.weLunch.value,
+          wd_0: form.wd_0.checked ? 'true' : 'false', wd_1: form.wd_1.checked ? 'true' : 'false', wd_2: form.wd_2.checked ? 'true' : 'false',
+          wd_3: form.wd_3.checked ? 'true' : 'false', wd_4: form.wd_4.checked ? 'true' : 'false', wd_5: form.wd_5.checked ? 'true' : 'false', wd_6: form.wd_6.checked ? 'true' : 'false'
+        };
+
+        google.script.run.withSuccessHandler(function(response) {
+            if (response.status === "error") { enableButtons(); resultDiv.innerHTML = `<div class='alert-msg alert-error'><strong>Error:</strong> ${response.message}</div>`; return; }
+            window.currentReportData = response.data;
+            if (mode === 'ai') {
+               const payload = { startDate: formPayload.startDate, endDate: formPayload.endDate, reportMode: formPayload.reportMode, locationName: formPayload.locationFilter, teamMembers: response.data.teamMembers, stats: response.data };
+               google.script.run.withSuccessHandler(function(aiFeedback) {
+                    enableButtons(); renderDashboard(response.data, resultDiv, mode, aiFeedback);
+                    if (mode === 'charts' || mode === 'ai') generateVisualCharts();
+                 }).withFailureHandler(function(err) {
+                    enableButtons(); renderDashboard(response.data, resultDiv, mode, `<b>AI Error:</b> ${err.message}`);
+                 }).runGeminiAnalysis(payload);
+            } else {
+               enableButtons(); renderDashboard(response.data, resultDiv, mode, null);
+               if (mode === 'charts') generateVisualCharts();
+            }
+          }).withFailureHandler(function(error) {
+            enableButtons(); resultDiv.innerHTML = `<div class='alert-msg alert-error'><strong>Critical Error:</strong> ${error.message}</div>`;
+          }).processUserFilters(formPayload); 
+      }
+
+      function enableButtons() { ['btnStandard', 'btnCharts', 'btnAI'].forEach(id => document.getElementById(id).disabled = false); }
+
+      function renderDashboard(data, container, mode, aiFeedback) {
+        let html = ""; const isGlobal = (data.reportMode === 'global'); const isTeam = (data.reportMode === 'teams'); const isEmployee = (data.reportMode === 'employee');
+        let titleLabel = isGlobal ? (data.locationName === 'All' ? "🌍 Global Operations Report" : `🏥 Office Report: ${data.locationName}`) : (isTeam ? `👥 Team Performance: ${data.employee}` : `👤 Performance Report`);
+        let subTitle = isGlobal ? `<strong>Locations:</strong> ${data.locationName === 'All' ? 'All Clinics' : data.locationName}` : (isTeam ? `<strong>Members:</strong> ${data.teamMembers.map(m=>m.name).join(', ')}` : `<strong>Agent:</strong> ${data.employeeDisplayName || data.employee} <span style='margin-left:10px; background: #e1e8ed; padding: 2px 8px; border-radius: 10px; font-size: 12px;'>Team: ${data.employeeTeam || 'General'}</span>`);
+
+        // --- 1. HEADER (Datos del empleado) ---
+        html += `<div id='reportVisualHeader' style='margin-bottom: 25px;'>
+                   <div id='reportHeader' style='background: #f8f9fa; padding: 15px; border-radius: 6px; border-left: 5px solid #2c3e50;'>
+                     <h3 style='margin: 0; color: #2c3e50;'>${titleLabel}</h3>
+                     <p style='margin: 5px 0 0 0; color: #7f8c8d; font-size: 14px;'>${subTitle}<br><strong>Period:</strong> ${data.startDate} to ${data.endDate}</p>
+                   </div>
+                 </div>`;
+                 
+        html += `<div style='display: flex; justify-content: flex-end; gap: 10px; margin-bottom: 15px;'>`;
+        if (isTeam) {
+            // NUEVO BOTÓN: Solo aparece si el reporte es de Teams
+            html += `<button id='btnGenerateIndividuals' class='hide-on-print' onclick='startBatchTeamSave()' style='background-color: #8e44ad; color: white; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer; font-weight: bold;'>👥 Generate Individual Reports</button>`;
+        }
+        html += `  <button id='btnSaveDrive' class='hide-on-print' onclick='saveToDrive()' style='background-color: #f39c12; color: white; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer; font-weight: bold;'>💾 Save to Drive</button>
+                   <button class='hide-on-print' onclick='preparePrint()' style='background-color: #27ae60; color: white; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer; font-weight: bold;'>🖨️ Print Report (PDF)</button>
+                 </div>`;
+
+        // --- 2. CALL LOG METRICS (NUEVO SECTOR) ---
+        if (isEmployee && data.callLogs) {
+          // El margin-bottom: 25px crea el salto visual solicitado
+          html += `<div class='report-card' style='border-color: #d35400; background-color: #fffaf6; margin-bottom: 25px;'>`;
+          html += `  <h4 class='section-title' style='color: #d35400; border-color: #d35400; margin-top:0;'>📝 Independent Call Log Metrics</h4>`;
+          html += `  <ul>`;
+          html += `    <li><strong>Rolling Average Logs:</strong> ${data.callLogs.rollingAvg}</li>`;
+          html += `    <li><strong>Last Week Logs Completed:</strong> ${data.callLogs.lastWeek}</li>`;
+          html += `    <li><strong>Performance Change (Last vs. Avg.):</strong> ${data.callLogs.perfChange}</li>`;
+          html += `    <li><strong>Log Time Efficiency:</strong> ${data.callLogs.efficiency} minutes per log</li>`;
+          html += `  </ul>`;
+          html += `</div>`;
+        }
+
+        // --- 3. WEAVE METRICS ---
+        if (data.channel === 'calls' || data.channel === 'sms' || data.channel === 'both') {
+            html += `<div style='background: #ecf0f1; padding: 10px 15px; border-radius: 4px; margin-bottom: 20px; border-left: 4px solid #2c3e50;'>`;
+            html += `  <h3 style='margin: 0; color: #2c3e50; font-size: 18px;'>🌐 Weave System Metrics</h3>`;
+            html += `</div>`;
+        }
+
+        if (data.channel === 'calls' || data.channel === 'both') {
+          html += `<h4 class='section-title title-calls' style='margin-top:0;'>📞 Phone Calls</h4>`;
+          if (data.calls.total > 0) {
+            html += `<ul><li><strong>Total Volume:</strong> ${data.calls.total} (${data.calls.inbound} Inbound | ${data.calls.outbound} Outbound)</li>
+                      <li><strong>Average Handling Time:</strong> ${data.calls.ahtMin}m ${data.calls.ahtSec}s</li>
+                      <li><strong>Total Talk Time:</strong> ${data.calls.talkHours} hours</li>
+                      <li><strong>Daily Average:</strong> ~${data.calls.stats.avg} calls/day</li></ul>`;
+          } else { html += `<p style='color: #999; font-style: italic; font-size: 14px;'>No call activity found.</p>`; }
+        }
+
+        if (data.channel === 'sms' || data.channel === 'both') {
+          html += `<h4 class='section-title title-sms'>💬 Text Messaging (SMS)</h4>`;
+          if (data.sms.total > 0) {
+            html += `<ul><li><strong>Total SMS Volume:</strong> ${data.sms.total}</li>
+                      <li><strong>Average Patients/Day:</strong> ~${data.sms.avgDailyPatients} unique patients</li>
+                      <li><strong>Daily Average:</strong> ~${data.sms.stats.avg} SMS/day</li></ul>`;
+          } else { html += `<p style='color: #999; font-style: italic; font-size: 14px;'>No SMS activity found.</p>`; }
+        }
+
+        const totalActivity = (data.channel === 'calls' ? data.calls.total : (data.channel === 'sms' ? data.sms.total : data.calls.total + data.sms.total));
+        if (totalActivity > 0) {
+          html += `<h4 class='section-title title-insights'>📊 Global Insights</h4><ul>
+                     <li><strong>Total Unique Patients Handled:</strong> ${data.insights.uniquePatients}</li>`;
+          if (!isGlobal && !isTeam) { html += `<li><strong>Work Pace:</strong> ~${data.insights.pace} interactions per active hour ⚡</li>`; }
+          html += `<li><strong>Peak Activity Time:</strong> ${data.insights.peakTime}</li></ul>`;
+                   
+          if (isGlobal && data.topAgents && data.topAgents.length > 0) {
+             html += `<p style='margin: 10px 0 5px 0; font-size: 14px; color: #8e44ad;'><strong>🏆 Top Agents by Volume:</strong></p><ul>`;
+             data.topAgents.slice(0, 5).forEach(ag => html += `<li><strong>${ag.name}</strong>: ${ag.count} interactions</li>`);
+             html += `</ul>`;
+          }
+          if (isTeam && data.teamStats) {
+             const teamMembersArr = Object.keys(data.teamStats).map(k => data.teamStats[k]);
+             teamMembersArr.sort((a, b) => b.avgDailyPatients - a.avgDailyPatients);
+             html += `<p style='margin: 10px 0 5px 0; font-size: 14px; color: #8e44ad;'><strong>🏆 Top Team Members (Avg Patients/Day):</strong></p><ul>`;
+             teamMembersArr.slice(0, 5).forEach(ag => html += `<li><strong>${ag.name}</strong>: ~${ag.avgDailyPatients} unique patients per day</li>`);
+             html += `</ul>`;
+          }
+        }
+
+        // --- SALTO DE PÁGINA 1 (Para imprimir) ---
+        html += `<div class='page-break'></div>`;
+
+        // --- 4. CHARTS (VISUAL ANALYTICS) ---
+        if (mode === 'charts' || mode === 'ai') {
+          html += `<div id='chartsContainer' style='margin-bottom: 25px; padding: 20px; background: #fff; border: 1px solid #eee; border-radius: 6px;'>
+                     <h4 class='section-title' style='color:#34495e; border-color:#34495e; margin-top:0;'>📊 Visual Analytics</h4>`;
+          if (isGlobal) {
+              if (data.channel === 'calls' || data.channel === 'both') html += `<div style='display: flex; justify-content: center; margin-bottom: 40px;'><div style='width: 60%;'><canvas id='callAnswerRateChart'></canvas></div></div>`;
+              html += `<div style='margin-bottom: 40px;'><canvas id='busiestDayChart'></canvas></div>`;
+              html += `<div style='margin-bottom: 40px;'><canvas id='busiestHourChart'></canvas></div>`;
+          } else if (isTeam) {
+              if (data.channel === 'calls' || data.channel === 'both') html += `<div style='margin-bottom: 40px;'><canvas id='teamCallsChart'></canvas></div>`;
+              if (data.channel === 'sms' || data.channel === 'both') html += `<div style='margin-bottom: 40px;'><canvas id='teamSmsChart'></canvas></div>`;
+              html += `<div style='margin-bottom: 40px;'><canvas id='teamPaceChart'></canvas></div>`;
+          } else {
+              if (data.channel === 'calls' || data.channel === 'both') html += `<div style='margin-bottom: 40px;'><canvas id='callsTimelineChart'></canvas></div>`;
+              if (data.channel === 'sms' || data.channel === 'both') html += `<div style='margin-bottom: 40px;'><canvas id='smsTimelineChart'></canvas></div>`;
+              html += `<div style='margin-bottom: 40px;'><canvas id='hourlyChart'></canvas></div>`;
+          }
+          html += `</div>`;
+        }
+
+        // --- 5. SCHEDULE & ATTENDANCE ---
+        if (isEmployee) {
+            if (data.channel === 'both' && data.attendance) {
+              html += `<div class='report-card' style='border-color: #e67e22; margin-bottom: 25px;'>`;
+              html += `<h4 class='section-title' style='color: #e67e22; border-color: #e67e22; margin-top:0;'>📅 Schedule & Attendance</h4>`;
+              if (data.attendance.absences.length > 0 || data.attendance.offDayWork.length > 0) {
+                if (data.attendance.absences.length > 0) { html += `<p style='margin: 10px 0 5px 0; font-size: 14px; color: #c0392b;'><strong>❌ Missing Work Days:</strong></p><ul>`; data.attendance.absences.forEach(d => html += `<li style='color: #c0392b;'>${d}</li>`); html += `</ul>`; }
+                if (data.attendance.offDayWork.length > 0) { html += `<p style='margin: 10px 0 5px 0; font-size: 14px; color: #2980b9;'><strong>⚠️ Off-Day Work:</strong></p><ul>`; data.attendance.offDayWork.forEach(d => html += `<li style='color: #2980b9;'>${d}</li>`); html += `</ul>`; }
+              } else { html += `<p style='color: #27ae60; font-weight: bold; font-size: 14px;'>✅ Perfect attendance!</p>`; }
+              html += `</div>`;
+            }
+        }
+
+        // --- AI FEEDBACK ---
+        if (mode === 'ai' && aiFeedback) {
+          html += `<div class='page-break'></div>`;
+          html += `<div id='aiContainer' style='margin-bottom: 25px; padding: 20px; background-color: #f9f0ff; border-left: 4px solid #8e44ad; border-radius: 4px;'><h4 class='section-title' style='color:#8e44ad; border-color:#8e44ad; margin-top:0;'>🧠 Feedback</h4><p class='ai-edit-hint' style='font-size: 12px; color: #888; font-style: italic;'>Click inside the box below to edit the AI text before printing.</p><div id='editableAIContent' class='editable-ai' contenteditable='true'>${aiFeedback}</div></div>`;
+        }
+
+        // --- SALTO DE PÁGINA 2 (Para imprimir) ---
+        if (isEmployee && data.channel === 'both') {
+          html += `<div class='page-break'></div>`;
+        }
+
+        // --- 6. INACTIVITY GAPS ---
+        if (isEmployee && data.channel === 'both') {
+          html += `<div class='report-card' style='border-color: #e74c3c;'><h4 class='section-title title-gaps' style='margin-top:0;'>⚠️ Inactivity Gaps</h4>`;
+          if (data.gaps && data.gaps.length > 0) {
+            data.gaps.forEach(dayObj => { html += `<div class='day-group'><div class='day-header'>📅 ${dayObj.date}</div>`; dayObj.items.forEach(gap => html += `<div class='gap-item'>🕒 ${gap.startStr} to ${gap.endStr} <strong>(${gap.durationStr})</strong></div>`); html += `</div>`; });
+          } else { html += `<p style='color: #27ae60; font-weight: bold; font-size: 14px;'>✅ Excellent! No significant inactivity gaps detected.</p>`; }
+          html += `</div>`;
+        }
+        
+        container.innerHTML = html;
+      }
+
+      let activeCharts = [];
+      function generateVisualCharts() {
+        const data = window.currentReportData;
+        activeCharts.forEach(c => c.destroy()); activeCharts = [];
+
+        if (data.reportMode === 'global') {
+            const ctxAnswer = document.getElementById('callAnswerRateChart');
+            if (ctxAnswer && data.callResults && (data.callResults.answered > 0 || data.callResults.missed > 0 || data.callResults.abandoned > 0)) {
+                activeCharts.push(new Chart(ctxAnswer, {
+                    type: 'doughnut',
+                    data: { labels: ['Answered', 'Missed', 'Abandoned', 'Other'], datasets: [{ data: [data.callResults.answered, data.callResults.missed, data.callResults.abandoned, data.callResults.other], backgroundColor: ['#27ae60', '#f1c40f', '#e74c3c', '#95a5a6'] }] },
+                    options: { plugins: { title: { display: true, text: '📞 Inbound Call Answer Rate', font: { size: 16 } } } }
+                }));
+            }
+
+            const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+            const avgCallsDay = data.busiestDay.calls.map((v, i) => Math.round(v / Math.max(1, data.busiestDay.dayCounts[i])));
+            const avgSmsDay = data.busiestDay.sms.map((v, i) => Math.round(v / Math.max(1, data.busiestDay.dayCounts[i])));
+            const ctxDay = document.getElementById('busiestDayChart');
+            if (ctxDay) {
+                activeCharts.push(new Chart(ctxDay, {
+                    type: 'bar',
+                    data: { labels: days, datasets: [{ label: '📞 Avg Inbound Calls', data: avgCallsDay, backgroundColor: '#2980b9', borderRadius: 4 }, { label: '💬 Avg Inbound SMS', data: avgSmsDay, backgroundColor: '#27ae60', borderRadius: 4 }] },
+                    options: { plugins: { title: { display: true, text: '📅 Busiest Day (Average Inbound per Day)', font: { size: 16 } } } }
+                }));
+            }
+
+            const hours = Array.from({length: 24}, (_, i) => { const a = i >= 12 ? 'PM' : 'AM'; const h = i % 12 || 12; return `${h} ${a}`; });
+            const avgCallsHour = data.busiestHour.calls.map(v => Math.round((v / Math.max(1, data.busiestHour.dayCount)) * 10) / 10);
+            const avgSmsHour = data.busiestHour.sms.map(v => Math.round((v / Math.max(1, data.busiestHour.dayCount)) * 10) / 10);
+            const ctxHour = document.getElementById('busiestHourChart');
+            if (ctxHour) {
+                activeCharts.push(new Chart(ctxHour, {
+                    type: 'bar',
+                    data: { labels: hours, datasets: [{ label: '📞 Avg Inbound Calls', data: avgCallsHour, backgroundColor: '#2980b9', borderRadius: 4 }, { label: '💬 Avg Inbound SMS', data: avgSmsHour, backgroundColor: '#27ae60', borderRadius: 4 }] },
+                    options: { plugins: { title: { display: true, text: '⏰ Busiest Hour (Average Inbound per Hour)', font: { size: 16 } } } }
+                }));
+            }
+
+        } else if (data.reportMode === 'teams') {
+            const teamMembers = Object.keys(data.teamStats).map(k => data.teamStats[k]);
+            teamMembers.sort((a,b) => (b.calls + b.sms) - (a.calls + a.sms)); 
+            const labels = teamMembers.map(m => m.name);
+            
+            const ctxCalls = document.getElementById('teamCallsChart');
+            if (ctxCalls) {
+              activeCharts.push(new Chart(ctxCalls, {
+                type: 'bar',
+                data: { labels: labels, datasets: [{ label: '📥 Inbound Calls', data: teamMembers.map(m=>m.callsIn), backgroundColor: '#3498db', borderRadius: 4 }, { label: '📤 Outbound Calls', data: teamMembers.map(m=>m.callsOut), backgroundColor: '#e67e22', borderRadius: 4 }] },
+                options: { plugins: { title: { display: true, text: '📞 Calls Comparison (Inbound vs Outbound)', font: { size: 16 } } }, scales: { y: { beginAtZero: true } } }
+              }));
+            }
+            const ctxSms = document.getElementById('teamSmsChart');
+            if (ctxSms) {
+              activeCharts.push(new Chart(ctxSms, {
+                type: 'bar',
+                data: { labels: labels, datasets: [{ label: '💬 Total SMS', data: teamMembers.map(m=>m.sms), backgroundColor: '#27ae60', borderRadius: 4 }] },
+                options: { plugins: { title: { display: true, text: '💬 SMS Volume Comparison', font: { size: 16 } } }, scales: { y: { beginAtZero: true } } }
+              }));
+            }
+            const ctxPace = document.getElementById('teamPaceChart');
+            if (ctxPace) {
+              activeCharts.push(new Chart(ctxPace, {
+                type: 'bar',
+                data: { labels: labels, datasets: [{ label: '⚡ Interactions / Active Hour', data: teamMembers.map(m=>m.pace), backgroundColor: '#8e44ad', borderRadius: 4 }] },
+                options: { plugins: { title: { display: true, text: '⚡ Work Pace Comparison', font: { size: 16 } } }, scales: { y: { beginAtZero: true } } }
+              }));
+            }
+        } else {
+            // Employee Charts
+            let labels = [], callsD = [], smsD = [];
+            if(data.calls && data.calls.daily) Object.keys(data.calls.daily).forEach(d => { if(!labels.includes(d)) labels.push(d); });
+            if(data.sms && data.sms.daily) Object.keys(data.sms.daily).forEach(d => { if(!labels.includes(d)) labels.push(d); });
+            labels.sort((a,b) => new Date(a) - new Date(b));
+            labels.forEach(d => { callsD.push(data.calls && data.calls.daily[d] ? data.calls.daily[d] : 0); smsD.push(data.sms && data.sms.daily[d] ? data.sms.daily[d] : 0); });
+
+            const ctxCalls = document.getElementById('callsTimelineChart');
+            if (ctxCalls) activeCharts.push(new Chart(ctxCalls, { type: 'line', data: { labels: labels, datasets: [{ label: '📞 Calls Volume', data: callsD, borderColor: '#2980b9', backgroundColor: 'rgba(41, 128, 185, 0.2)', fill: true, tension: 0.3 }] }, options: { plugins: { title: { display: true, text: 'Daily Calls Timeline' } } } }));
+
+            const ctxSms = document.getElementById('smsTimelineChart');
+            if (ctxSms) activeCharts.push(new Chart(ctxSms, { type: 'line', data: { labels: labels, datasets: [{ label: '💬 SMS Volume', data: smsD, borderColor: '#27ae60', backgroundColor: 'rgba(39, 174, 96, 0.2)', fill: true, tension: 0.3 }] }, options: { plugins: { title: { display: true, text: 'Daily SMS Timeline' } } } }));
+
+            const ctxHourly = document.getElementById('hourlyChart');
+            if (ctxHourly) {
+              let hData = data.hoursData || { morning: 0, afternoon: 0, evening: 0 };
+              activeCharts.push(new Chart(ctxHourly, { type: 'bar', data: { labels: ['Morning (6am-12pm)', 'Afternoon (12pm-5pm)', 'Evening (5pm+)'], datasets: [{ label: 'Total Interactions', data: [hData.morning, hData.afternoon, hData.evening], backgroundColor: ['#f1c40f', '#e67e22', '#34495e'] }] }, options: { plugins: { title: { display: true, text: '🕒 Hourly Productivity Map' } } } }));
+            }
+        }
+      }
+
+      function preparePrint() { const originalTitle = document.title; document.title = "\u200b"; window.print(); setTimeout(() => { document.title = originalTitle; }, 1000); }
+
+      // --- NUEVO: Extrae el HTML limpio y convierte gráficas a imágenes ---
+      function getPrintableHtmlString() {
+        const container = document.getElementById('result');
+        const clone = container.cloneNode(true);
+        const originalCanvases = container.querySelectorAll('canvas');
+        const clonedCanvases = clone.querySelectorAll('canvas');
+
+        for (let i = 0; i < originalCanvases.length; i++) {
+          const img = document.createElement('img');
+          img.src = originalCanvases[i].toDataURL('image/png', 1.0);
+          img.style.maxWidth = '100%'; img.style.height = 'auto'; img.style.margin = '0 auto'; img.style.display = 'block';
+          clonedCanvases[i].parentNode.replaceChild(img, clonedCanvases[i]);
+        }
+
+        clone.querySelectorAll('.hide-on-print').forEach(el => el.remove());
+        const styles = document.querySelector('style').innerHTML;
+        return `<html><head><style>${styles} body {background: white;} .container {box-shadow: none; max-width: 100%;}</style></head><body><div class="container">${clone.innerHTML}</div></body></html>`;
+      }
+
+      // --- ACTUALIZADO: saveToDrive Normal ---
+      function saveToDrive() {
+        const btn = document.getElementById('btnSaveDrive');
+        const originalText = btn.innerHTML;
+        btn.innerHTML = "⏳ Saving..."; btn.disabled = true;
+
+        const data = window.currentReportData;
+        const htmlString = getPrintableHtmlString();
+        
+        const empName = data.employeeDisplayName || data.employee || data.teamFilter || "Global";
+        const cleanName = empName.replace(/[^a-zA-Z0-9\s]/g, "").trim().replace(/\s+/g, "_");
+        
+        // Asignación inteligente del nombre (Team o Individual)
+        const fileName = (data.reportMode === 'teams') 
+          ? `Performance_Team_Report_${cleanName}_${data.startDate}_to_${data.endDate}.pdf` 
+          : `Performance_Report_${cleanName}_${data.startDate}_to_${data.endDate}.pdf`;
+
+        google.script.run
+          .withSuccessHandler(() => { btn.innerHTML = "✅ Saved!"; setTimeout(() => { btn.innerHTML = originalText; btn.disabled = false; }, 3000); })
+          .withFailureHandler((err) => { alert("Error: " + err.message); btn.innerHTML = originalText; btn.disabled = false; })
+          .createPdfInDrive(htmlString, fileName, data.endDate);
+      }
+
+      // ======================================================================
+      // --- NUEVO MÓDULO: PROCESAMIENTO SECUENCIAL DE EQUIPOS (BATCHING) ---
+      // ======================================================================
+      let teamBatchQueue = [];
+      let originalTeamFormPayload = null;
+
+      function startBatchTeamSave() {
+        const data = window.currentReportData;
+        if (!data || !data.teamMembers || data.teamMembers.length === 0) return;
+        if (!confirm(`This will save the Team Report AND generate ${data.teamMembers.length} individual reports automatically. This process will take a few minutes. Do not close the window.\n\nContinue?`)) return;
+
+        const btn = document.getElementById('btnGenerateIndividuals');
+        btn.innerHTML = "⏳ Initializing Batch..."; btn.disabled = true;
+        document.getElementById('btnSaveDrive').style.display = 'none';
+        
+        // Guardamos el formulario original para restaurarlo al final
+        const form = document.getElementById('filterForm');
+        originalTeamFormPayload = {
+          reportMode: form.reportMode.value, teamFilter: form.teamFilter.value, locationFilter: form.locationFilter.value,
+          employeeEmail: form.employeeEmail.value, startDate: data.startDate, endDate: data.endDate,
+          channel: form.channel.value, useSchedule: form.useSchedule.value,
+          wdStart: form.wdStart.value, wdEnd: form.wdEnd.value, weStart: form.weStart.value, weEnd: form.weEnd.value,
+          wdLunch: form.wdLunch.value, weLunch: form.weLunch.value,
+          wd_0: form.wd_0.checked?'true':'false', wd_1: form.wd_1.checked?'true':'false', wd_2: form.wd_2.checked?'true':'false', wd_3: form.wd_3.checked?'true':'false', wd_4: form.wd_4.checked?'true':'false', wd_5: form.wd_5.checked?'true':'false', wd_6: form.wd_6.checked?'true':'false'
+        };
+
+        // 1. Guardar primero el reporte del equipo actual
+        const htmlString = getPrintableHtmlString();
+        const cleanTeamName = (data.teamFilter || "Team").replace(/[^a-zA-Z0-9\s]/g, "").trim().replace(/\s+/g, "_");
+        const teamFileName = `Performance_Team_Report_${cleanTeamName}_${data.startDate}_to_${data.endDate}.pdf`;
+
+        btn.innerHTML = "⏳ Saving Team Summary...";
+        google.script.run
+          .withSuccessHandler(() => {
+              // 2. Éxito al guardar el equipo, iniciamos la cola individual
+              teamBatchQueue = [...data.teamMembers]; // Copiamos el array
+              processNextTeamMember();
+          })
+          .withFailureHandler((err) => {
+              alert("Failed to save Team Report: " + err.message);
+              btn.innerHTML = "👥 Generate Individual Reports"; btn.disabled = false;
+          }).createPdfInDrive(htmlString, teamFileName, data.endDate);
+      }
+
+      function processNextTeamMember() {
+        if (teamBatchQueue.length === 0) {
+            // Terminamos: Restaurar la vista del equipo
+            document.getElementById('result').innerHTML = `<div class='alert-msg' style='background-color:#d4edda; color:#155724; font-weight:bold; text-align:center; padding: 20px;'>✅ All ${originalTeamFormPayload.teamFilter} reports saved to Drive! Restoring dashboard...</div>`;
+            google.script.run.withSuccessHandler((response) => {
+                window.currentReportData = response.data;
+                renderDashboard(response.data, document.getElementById('result'), 'charts', null);
+                generateVisualCharts();
+            }).processUserFilters(originalTeamFormPayload);
+            return;
+        }
+
+        const member = teamBatchQueue.shift(); // Extrae el primer miembro
+        const remaining = teamBatchQueue.length;
+        
+        // Feedback visual en la pantalla
+        document.getElementById('result').innerHTML = `<div class='alert-msg' style='background-color:#e8f4f8; color:#2980b9; font-weight:bold; text-align:center; padding: 20px; font-size:18px;'>⏳ Processing: <b>${member.name}</b><br><span style='font-size:14px; font-weight:normal;'>(${remaining} remaining in queue...)</span></div>`;
+
+        // Preparamos el payload como si hubiéramos buscado a este empleado manualmente
+        const memberPayload = { ...originalTeamFormPayload };
+        memberPayload.reportMode = 'employee';
+        memberPayload.employeeEmail = member.id;
+
+        // Pedimos los datos del empleado
+        google.script.run.withSuccessHandler((response) => {
+            if(response.status === 'error') {
+                console.warn(`Skipping ${member.name}: ${response.message}`);
+                processNextTeamMember(); // Si no tiene llamadas, lo salta y sigue
+                return;
+            }
+            
+            window.currentReportData = response.data;
+            
+            // Renderizamos en pantalla para que las gráficas existan en el DOM
+            renderDashboard(response.data, document.getElementById('result'), 'charts', null);
+            
+            // Apagamos las animaciones de Chart.js para captura instantánea
+            Chart.defaults.animation = false;
+            generateVisualCharts();
+            Chart.defaults.animation = true; 
+            
+            // Esperamos 600ms para asegurar que las gráficas se hayan dibujado en el Canvas
+            setTimeout(() => {
+                const htmlString = getPrintableHtmlString();
+                const cleanName = member.name.replace(/[^a-zA-Z0-9\s]/g, "").trim().replace(/\s+/g, "_");
+                const fileName = `Performance_Report_${cleanName}_${response.data.startDate}_to_${response.data.endDate}.pdf`;
+                
+                // Guardamos el PDF en Drive
+                google.script.run.withSuccessHandler(() => {
+                    processNextTeamMember(); // Éxito -> Siguiente en la cola
+                }).withFailureHandler((err) => {
+                    console.error(`Failed saving ${member.name}: ` + err.message);
+                    processNextTeamMember(); // Falla -> Siguiente en la cola
+                }).createPdfInDrive(htmlString, fileName, response.data.endDate);
+
+            }, 600); 
+
+        }).withFailureHandler((err) => {
+            console.error(`Error processing ${member.name}: ` + err.message);
+            processNextTeamMember(); // Salta al siguiente si hay error
+        }).processUserFilters(memberPayload);
+      }
+
+    </script>
+  </body>
+</html>
