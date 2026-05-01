@@ -363,6 +363,31 @@
           html += `</div>`;
         }
 
+        // --- 2.5 NUEVO: PA METRICS DASHBOARD ---
+        if (data.paDashboardData) {
+          html += `<div class='report-card' style='border-color: #2980b9; background-color: #f0f8ff; margin-bottom: 25px;'>`;
+          html += `  <h4 class='section-title' style='color: #2980b9; border-color: #2980b9; margin-top:0;'>📋 Prior Authorization (PA) Metrics</h4>`;
+          
+          let pa = data.paDashboardData;
+          let totalPA = Object.values(pa.statusCounts).reduce((a,b)=>a+b, 0);
+          let approvedPA = pa.statusCounts["APPROVED"] || 0;
+          let completePA = pa.statusCounts["COMPLETE"] || 0;
+          
+          html += `  <ul style='margin-bottom: 20px;'>`;
+          html += `    <li><strong>Total PAs Processed:</strong> ${totalPA}</li>`;
+          html += `    <li><strong>Approved / Complete Status:</strong> ${approvedPA + completePA}</li>`;
+          html += `  </ul>`;
+          
+          // Contenedor cuadrícula para las 4 gráficas del Dashboard Original de PA
+          html += `  <div id='paChartsContainer' style='display: grid; grid-template-columns: 1fr 1fr; gap: 15px;'>`;
+          html += `    <div style='background: white; padding: 15px; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);'><div style='text-align:center; font-weight:bold; font-size:14px; margin-bottom:10px;' id='paTitle1'>Chart 1</div><canvas id='paChart1'></canvas></div>`;
+          html += `    <div style='background: white; padding: 15px; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);'><div style='text-align:center; font-weight:bold; font-size:14px; margin-bottom:10px;' id='paTitle2'>Chart 2</div><canvas id='paChart2'></canvas></div>`;
+          html += `    <div style='background: white; padding: 15px; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);'><div style='text-align:center; font-weight:bold; font-size:14px; margin-bottom:10px;' id='paTitle3'>Chart 3</div><canvas id='paChart3'></canvas></div>`;
+          html += `    <div style='background: white; padding: 15px; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);'><div style='text-align:center; font-weight:bold; font-size:14px; margin-bottom:10px;' id='paTitle4'>Chart 4</div><canvas id='paChart4'></canvas></div>`;
+          html += `  </div>`;
+          html += `</div>`;
+        }
+
         // --- 3. WEAVE METRICS ---
         if (data.channel === 'calls' || data.channel === 'sms' || data.channel === 'both') {
             html += `<div style='background: #ecf0f1; padding: 10px 15px; border-radius: 4px; margin-bottom: 20px; border-left: 4px solid #2c3e50;'>`;
@@ -557,6 +582,11 @@
               activeCharts.push(new Chart(ctxHourly, { type: 'bar', data: { labels: ['Morning (6am-12pm)', 'Afternoon (12pm-5pm)', 'Evening (5pm+)'], datasets: [{ label: 'Total Interactions', data: [hData.morning, hData.afternoon, hData.evening], backgroundColor: ['#f1c40f', '#e67e22', '#34495e'] }] }, options: { plugins: { title: { display: true, text: '🕒 Hourly Productivity Map' } } } }));
             }
         }
+
+        // --- NUEVO: RENDERIZAR GRÁFICAS DE PA SI EXISTEN ---
+        if (data.paDashboardData) {
+          renderPACharts(data.paDashboardData);
+        }
       }
 
       function preparePrint() { const originalTitle = document.title; document.title = "\u200b"; window.print(); setTimeout(() => { document.title = originalTitle; }, 1000); }
@@ -708,6 +738,70 @@
             console.error(`Error processing ${member.name}: ` + err.message);
             processNextTeamMember(); // Salta al siguiente si hay error
         }).processUserFilters(memberPayload);
+      }
+
+      function renderPACharts(paData) {
+        const STATUS_CONFIG = {
+          "COMPLETE": { order: 1, color: "#2ecc71" }, "APPROVED": { order: 2, color: "#229954" },
+          "SUBMITTED": { order: 3, color: "#f1c40f" }, "APPEAL SUBMITTED": { order: 4, color: "#d4ac0d" },
+          "IN PROGRESS": { order: 5, color: "#85c1e9" }, "PENDING": { order: 6, color: "#2874a6" },
+          "DENIED": { order: 7, color: "#e74c3c" }, "CANCELED": { order: 8, color: "#922b21" },
+          "PLAN EXCLUSION": { order: 9, color: "#d35400" }, "PA NOT NEEDED": { order: 10, color: "#e67e22" },
+          "NON PAR": { order: 11, color: "#bb8fce" }, "NONPAR / SELF PAY": { order: 12, color: "#76448a" },
+          "OTHER": { order: 13, color: "#2c3e50" }
+        };
+
+        const statusLabels = Object.keys(paData.statusCounts).sort((a, b) => {
+           const oA = STATUS_CONFIG[a] ? STATUS_CONFIG[a].order : 999;
+           const oB = STATUS_CONFIG[b] ? STATUS_CONFIG[b].order : 999;
+           return oA - oB;
+        });
+        const statusValues = statusLabels.map(l => paData.statusCounts[l]);
+        const statusColors = statusLabels.map(l => STATUS_CONFIG[l] ? STATUS_CONFIG[l].color : '#bdc3c7');
+
+        const defaultColors = ['#3498db', '#e74c3c', '#2ecc71', '#f1c40f', '#9b59b6', '#34495e', '#e67e22', '#1abc9c'];
+        const getBasicData = (obj) => ({ labels: Object.keys(obj), values: Object.values(obj) });
+
+        function createPAChart(canvasId, titleId, titleText, type, labels, values, colorTemplate, isHorizontal) {
+          document.getElementById(titleId).innerText = titleText;
+          const ctx = document.getElementById(canvasId);
+          if (!ctx) return;
+          activeCharts.push(new Chart(ctx, {
+            type: type,
+            data: {
+              labels: labels,
+              datasets: [{
+                label: 'Volume', data: values,
+                backgroundColor: type === 'line' ? colorTemplate : colorTemplate,
+                borderColor: type === 'line' ? colorTemplate : '#fff',
+                borderWidth: 1, fill: type !== 'line', tension: 0.1
+              }]
+            },
+            options: {
+              responsive: true,
+              indexAxis: isHorizontal ? 'y' : 'x',
+              plugins: { legend: { display: type === 'pie' || type === 'doughnut' } }
+            }
+          }));
+        }
+
+        if (paData.selection === "All") {
+          const d1 = getBasicData(paData.memberCounts);
+          createPAChart('paChart1', 'paTitle1', 'Total PAs by Team Member', 'bar', d1.labels, d1.values, defaultColors, false);
+          createPAChart('paChart2', 'paTitle2', 'Overall Status Breakdown', 'doughnut', statusLabels, statusValues, statusColors, false);
+          const d3 = getBasicData(paData.dailyCounts);
+          createPAChart('paChart3', 'paTitle3', 'Daily Team Volume (EST)', 'line', d3.labels, d3.values, defaultColors[0], false);
+          const d4 = getBasicData(paData.medicationCounts);
+          createPAChart('paChart4', 'paTitle4', 'Top Medications/Procedures Overall', 'bar', d4.labels, d4.values, defaultColors[2], true);
+        } else {
+          createPAChart('paChart1', 'paTitle1', 'Status Breakdown', 'pie', statusLabels, statusValues, statusColors, false);
+          const d2 = getBasicData(paData.dailyCounts);
+          createPAChart('paChart2', 'paTitle2', 'Daily Volume Processed (EST)', 'bar', d2.labels, d2.values, defaultColors[0], false);
+          const d3 = getBasicData(paData.medicationCounts);
+          createPAChart('paChart3', 'paTitle3', 'Top Medications/Procedures Handled', 'bar', d3.labels, d3.values, defaultColors[4], true);
+          const d4 = getBasicData(paData.insuranceCounts);
+          createPAChart('paChart4', 'paTitle4', 'Top Insurance Plans', 'doughnut', d4.labels, d4.values, defaultColors, false);
+        }
       }
 
     </script>

@@ -199,6 +199,8 @@ function processUserFilters(form) {
   smsData.avgDailyPatients = calculateAvgDailyPatients(metrics.sms.dailyPatients);
   insights.avgDailyPatients = calculateAvgDailyPatients(metrics.dailyPatients);
 
+  var paDashboardData = getPAMetricsData(reportMode, teamName, officialEmployeeEmail, form.startDate, form.endDate);
+
   return {
     status: "success",
     data: {
@@ -213,7 +215,8 @@ function processUserFilters(form) {
       teamStats: metrics.teamStats, startDate: form.startDate, endDate: form.endDate, channel: channel,
       calls: callsData, sms: smsData, callResults: metrics.callResults,
       busiestDay: metrics.busiestDay, busiestHour: metrics.busiestHour,
-      insights: insights, topAgents: insights.topAgents || [], hoursData: metrics.hours, gaps: gaps, attendance: attendance
+      insights: insights, topAgents: insights.topAgents || [], hoursData: metrics.hours, gaps: gaps, attendance: attendance,
+      paDashboardData: paDashboardData
     }
   };
 }
