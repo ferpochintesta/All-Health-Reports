@@ -1,12 +1,14 @@
 // ==========================================
 // GLOBAL CONFIGURATION
 // ==========================================
-const CALLS_FOLDER_ID = "1eTdUX8_i6QuZpiQ5uoEIhzw6ZAI3lo79"; 
-const SMS_FOLDER_ID = "1kCa0z7UfTsrL-ZrVSqApV0gRxFv-y3_j";
-const GEMINI_API_KEY = "AIzaSyA8D-rILofyhJ3q-CNwNB8dZLDL4_17k_c";
-const SPREADSHEET_ID = "1ZnFF0K28g_-NhLWfXzm1flTBNht9BofQlcYAeI6yLNo";
-const CALL_LOG_SHEET_ID = "1388fgXa-_O-hOFjyc0KLXtfcffPYFS74wIxGGTnnids";
-const REPORTS_PARENT_FOLDER_ID = "1buUuApkH8ach4y9059IeuURNe49Ufpmp";
+const scriptProps = PropertiesService.getScriptProperties();
+
+const CALLS_FOLDER_ID = scriptProps.getProperty('CALLS_FOLDER_ID'); 
+const SMS_FOLDER_ID = scriptProps.getProperty('SMS_FOLDER_ID'); 
+const GEMINI_API_KEY = scriptProps.getProperty('GEMINI_API_KEY');
+const SPREADSHEET_ID = scriptProps.getProperty('SPREADSHEET_ID');
+const CALL_LOG_SHEET_ID = scriptProps.getProperty('CALL_LOG_SHEET_ID');
+const REPORTS_PARENT_FOLDER_ID = scriptProps.getProperty('REPORTS_PARENT_FOLDER_ID');
 
 const AUTHORIZED_MANAGERS = [
   "genesiscastillo@allhealthmedgroup.com", 
