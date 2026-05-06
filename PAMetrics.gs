@@ -85,10 +85,9 @@ function processPAData(selection, startDateStr, endDateStr, PA_SPREADSHEET_ID, E
   let paGroups = {}; 
   let patientsThisPeriod = [];
 
-  const today = new Date();
-  const twoWeeksAgo = new Date();
-  twoWeeksAgo.setDate(today.getDate() - 14);
-  twoWeeksAgo.setHours(0,0,0,0);
+  const todayDate = new Date();
+  todayDate.setDate(todayDate.getDate() - 15); // Restamos 15 días (ej. 6 de mayo -> 21 de abril)
+  const overdueThresholdStr = Utilities.formatDate(todayDate, Session.getScriptTimeZone(), "yyyy-MM-dd");
 
   targetMembers.forEach(member => {
     let sheetToProcess = null;
@@ -154,7 +153,7 @@ function processPAData(selection, startDateStr, endDateStr, PA_SPREADSHEET_ID, E
           let statusLower = statusRaw.toLowerCase();
           let chartNum = String(row[chartIdx] || "").trim();
           let patName = String(row[nameIdx] || "").trim();
-          let medication = medIdx !== -1 ? String(row[medIdx]).trim().toLowerCase() : "unknown_med";
+          let medication = medIdx !== -1 ? String(row[medIdx]).trim() : "Unknown";
 
           // --- LÓGICA DE AGRUPAMIENTO PARA OVERDUE ---
           if (chartNum) {
@@ -201,12 +200,15 @@ function processPAData(selection, startDateStr, endDateStr, PA_SPREADSHEET_ID, E
       group.entries.sort((a, b) => b.dateObj.getTime() - a.dateObj.getTime());
       let latest = group.entries[0];
       
-      // Regla 3: ¿La fecha más reciente es de hace más de 2 semanas?
-      if (latest.dateObj < twoWeeksAgo) {
+      // Regla 3: ¿La fecha EN TEXTO es menor o igual a nuestro límite (ej: 21 de abril)?
+      if (latest.date <= overdueThresholdStr) {
+        
+        // Borramos el objeto de fecha prohibido antes de enviarlo a la pantalla web
+        delete latest.dateObj; 
+        
         finalOverdue.push(latest);
       }
     }
-    // Si hay aunque sea uno que NO es pendiente (ej. Approved), el hilo se ignora completo.
   }
 
   let metrics = aggregatePAMetrics(allRows);

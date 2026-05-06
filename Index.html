@@ -404,32 +404,55 @@
           html += `  </div>`;
           html += `</div>`;
 
+          // --- SALTO DE PÁGINA OBLIGATORIO ---
+          html += `<div class='page-break'></div>`;
+
           // --- TARJETAS NUEVAS: UNCONTACTED Y OVERDUE ---
+          // --- TARJETAS DE CONTROL DE CALIDAD (PA TEAM) ---
           if (isEmployee) {
               let uncontacted = pa.uncontactedPatients || [];
               let overdue = pa.overduePAs || [];
               
+              // TARJETA 1: PACIENTES NO CONTACTADOS
               html += `<div class='report-card' style='border-color: #c0392b; background-color: #fdf2f0; margin-bottom: 25px; page-break-inside: avoid;'>`;
               html += `  <h4 class='section-title' style='color: #c0392b; border-color: #c0392b; margin-top:0;'>⚠️ Uncontacted PA Patients (This Period)</h4>`;
+              
+              // Disclaimer para Uncontacted
+              html += `  <div style='background-color: #fce4e4; border: 1px solid #e6b7b7; padding: 10px; border-radius: 4px; margin-bottom: 15px; font-size: 13px; color: #7f231c;'>`;
+              html += `    <strong>Note:</strong> Please check in Weave manually. Often a patient <i>was</i> contacted, but Weave might have the same phone number registered under a different name. Please confirm directly in the patient's Weave history if calls or messages exist.`;
+              html += `  </div>`;
+
               if (uncontacted.length > 0) {
-                  html += `  <p style='font-size:14px; margin-top:0;'>Patients with processed PAs but NO Weave calls/messages found:</p>`;
-                  html += `  <ul style='font-size: 14px;'>`;
-                  uncontacted.forEach(p => html += `<li><strong>${p.name || 'No Name'}</strong> (Chart: ${p.chart || 'N/A'})</li>`);
+                  html += `  <ul style='font-size: 13px; list-style-type: none; padding-left: 0;'>`;
+                  uncontacted.forEach(p => {
+                      html += `<li style='margin-bottom: 4px; padding-bottom: 4px; border-bottom: 1px dashed #e6b7b7;'>`;
+                      html += `<strong>${p.name || 'No Name'}</strong> (${p.chart || 'N/A'})</li>`;
+                  });
                   html += `  </ul>`;
               } else {
-                  html += `  <p style='color: #27ae60; font-weight: bold; font-size: 14px;'>✅ All PA patients were contacted via Weave!</p>`;
+                  html += `  <p style='color: #27ae60; font-weight: bold; font-size: 13px;'>✅ All PA patients were contacted via Weave!</p>`;
               }
               html += `</div>`;
 
+              // TARJETA 2: PAS ATRASADAS
               html += `<div class='report-card' style='border-color: #d35400; background-color: #fdfefe; margin-bottom: 25px; page-break-inside: avoid;'>`;
               html += `  <h4 class='section-title' style='color: #d35400; border-color: #d35400; margin-top:0;'>⏳ Overdue PAs (> 2 Weeks)</h4>`;
+              
+              // Disclaimer para Overdue
+              html += `  <div style='background-color: #fff5e6; border: 1px solid #f5d5a4; padding: 10px; border-radius: 4px; margin-bottom: 15px; font-size: 13px; color: #915d0a;'>`;
+              html += `    <strong>Note:</strong> Please review these authorizations, work on them, and update their status in the PA Log so they don't continue to appear as pending in future reports.`;
+              html += `  </div>`;
+
               if (overdue.length > 0) {
-                  html += `  <p style='font-size:14px; margin-top:0;'>PAs pending/submitted for more than 14 days:</p>`;
-                  html += `  <ul style='font-size: 14px;'>`;
-                  overdue.forEach(p => html += `<li><strong>${p.patient}</strong> (Chart: ${p.chart || 'N/A'}) | Date: ${p.date} | Status: <span style='color:#e67e22;'>${p.status}</span></li>`);
+                  html += `  <ul style='font-size: 13px; list-style-type: none; padding-left: 0;'>`;
+                  overdue.forEach(p => {
+                      // Formato solicitado: Nombre (Chart) | Fecha | Medicación | Estatus
+                      html += `<li style='margin-bottom: 4px; padding-bottom: 4px; border-bottom: 1px dashed #f5d5a4;'>`;
+                      html += `<strong>${p.patient}</strong> (${p.chart || 'N/A'}) | ${p.date} | ${p.medication} | <span style='color:#e67e22; font-weight:bold;'>${p.status}</span></li>`;
+                  });
                   html += `  </ul>`;
               } else {
-                  html += `  <p style='color: #27ae60; font-weight: bold; font-size: 14px;'>✅ No overdue PAs pending!</p>`;
+                  html += `  <p style='color: #27ae60; font-weight: bold; font-size: 13px;'>✅ No overdue PAs pending!</p>`;
               }
               html += `</div>`;
           }
