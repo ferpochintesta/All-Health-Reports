@@ -138,13 +138,17 @@ function processUserFilters(form) {
 
   if (reportMode === 'employee') {
       var matchedArr = Object.keys(metrics.matchedEmails);
-      if (matchedArr.length === 0) return { status: "error", message: "No activity found for '" + employee + "' in this date range." };
-      else if (matchedArr.length > 1) {
+      var officialEmployeeEmail = "";
+      if (matchedArr.length === 0) {
+        // Si no hay llamadas, no matamos el script. Usamos lo que escribió el usuario para buscar en PA.
+        officialEmployeeEmail = employee; 
+      } else if (matchedArr.length > 1) {
         var errorHtml = "Multiple employees found. Please use one of these exact emails:<br><br><ul style='text-align:left; margin-top:5px;'>";
         matchedArr.forEach(function(e) { errorHtml += "<li>" + e + "</li>"; });
         return { status: "error", message: errorHtml + "</ul>" };
+      } else {
+        officialEmployeeEmail = matchedArr[0];
       }
-      officialEmployeeEmail = matchedArr[0];
       
       // 1. Buscamos el perfil en el Spreadsheet usando el correo oficial
       var employeeProfile = getEmployeeProfile(officialEmployeeEmail);

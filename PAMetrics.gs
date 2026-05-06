@@ -30,7 +30,7 @@ function getPAMetricsData(reportMode, teamName, employeeEmail, startDateStr, end
   const scriptProps = PropertiesService.getScriptProperties();
   
   // IMPORTANTE: Asegúrate de guardar estas propiedades en el script de Reports
-  const PA_SPREADSHEET_ID = scriptProps.getProperty('PA_SPREADSHEET_ID');
+  const PA_SPREADSHEET_ID = scriptProps.getProperty('MAIN_SPREADSHEET_ID');
   if (!PA_SPREADSHEET_ID) {
     Logger.log("PA_SPREADSHEET_ID no configurado en propiedades.");
     return null; 
@@ -42,9 +42,13 @@ function getPAMetricsData(reportMode, teamName, employeeEmail, startDateStr, end
   let selection = null;
 
   // 1. Verificar si se está pidiendo el reporte del Equipo PA
-  if (reportMode === 'teams' && teamName && teamName.toLowerCase().includes('pa')) {
-    selection = "All";
-  } 
+  if (reportMode === 'teams' && teamName) {
+    let tName = teamName.toLowerCase();
+    // Hacemos match si se llama PA o si incluye Prior Auth
+    if (tName.includes('pa') || tName.includes('prior auth')) {
+      selection = "All";
+    }
+  }
   // 2. Verificar si se está pidiendo el reporte de un Empleado que pertenece a PA
   else if (reportMode === 'employee' && employeeEmail) {
     let emailPrefix = employeeEmail.split('@')[0].toLowerCase();
@@ -65,8 +69,8 @@ function getPAMetricsData(reportMode, teamName, employeeEmail, startDateStr, end
 }
 
 /**
- * Procesa la lectura del Excel y cruza las fechas
- */
+  Procesa la lectura del Excel y cruza las fechas
+ **/
 function processPAData(selection, startDateStr, endDateStr, PA_SPREADSHEET_ID, EXCEPTIONS) {
   const startDate = new Date(startDateStr + "T00:00:00-05:00"); 
   const endDate = new Date(endDateStr + "T23:59:59-05:00");     
