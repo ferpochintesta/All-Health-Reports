@@ -783,6 +783,12 @@
         const defaultColors = ['#3498db', '#e74c3c', '#2ecc71', '#f1c40f', '#9b59b6', '#34495e', '#e67e22', '#1abc9c'];
         const getBasicData = (obj) => ({ labels: Object.keys(obj), values: Object.values(obj) });
 
+        // NUEVA FUNCIÓN: Fuerza el orden cronológico de las fechas YYYY-MM-DD
+        const getChronologicalData = (obj) => {
+            let sortedKeys = Object.keys(obj).sort();
+            return { labels: sortedKeys, values: sortedKeys.map(k => obj[k]) };
+        };
+
         function createPAChart(canvasId, titleId, titleText, type, labels, values, colorTemplate, isHorizontal) {
           document.getElementById(titleId).innerText = titleText;
           const ctx = document.getElementById(canvasId);
@@ -811,16 +817,23 @@
           const d1 = getBasicData(paData.memberCounts);
           createPAChart('paChart1', 'paTitle1', 'Total PAs by Team Member', 'bar', d1.labels, d1.values, defaultColors, false);
           createPAChart('paChart2', 'paTitle2', 'Overall Status Breakdown', 'doughnut', statusLabels, statusValues, statusColors, false);
-          const d3 = getBasicData(paData.dailyCounts);
-          createPAChart('paChart3', 'paTitle3', 'Daily Team Volume (EST)', 'line', d3.labels, d3.values, defaultColors[0], false);
+          
+          // APLICAMOS EL ORDEN CRONOLÓGICO AQUÍ
+          const d3 = getChronologicalData(paData.dailyCounts); 
+          createPAChart('paChart3', 'paTitle3', 'Daily Team Volume', 'line', d3.labels, d3.values, defaultColors[0], false);
+          
           const d4 = getBasicData(paData.medicationCounts);
           createPAChart('paChart4', 'paTitle4', 'Top Medications/Procedures Overall', 'bar', d4.labels, d4.values, defaultColors[2], true);
         } else {
           createPAChart('paChart1', 'paTitle1', 'Status Breakdown', 'pie', statusLabels, statusValues, statusColors, false);
-          const d2 = getBasicData(paData.dailyCounts);
-          createPAChart('paChart2', 'paTitle2', 'Daily Volume Processed (EST)', 'bar', d2.labels, d2.values, defaultColors[0], false);
+          
+          // APLICAMOS EL ORDEN CRONOLÓGICO AQUÍ
+          const d2 = getChronologicalData(paData.dailyCounts); 
+          createPAChart('paChart2', 'paTitle2', 'Daily Volume Processed', 'bar', d2.labels, d2.values, defaultColors[0], false);
+          
           const d3 = getBasicData(paData.medicationCounts);
           createPAChart('paChart3', 'paTitle3', 'Top Medications/Procedures Handled', 'bar', d3.labels, d3.values, defaultColors[4], true);
+          
           const d4 = getBasicData(paData.insuranceCounts);
           createPAChart('paChart4', 'paTitle4', 'Top Insurance Plans', 'doughnut', d4.labels, d4.values, defaultColors, false);
         }

@@ -73,9 +73,11 @@ function getPAMetricsData(reportMode, teamName, employeeEmail, startDateStr, end
 /**
   Procesa la lectura del Excel y cruza las fechas
  **/
+/**
+  Procesa la lectura del Excel como texto puro sin zonas horarias
+ **/
 function processPAData(selection, startDateStr, endDateStr, PA_SPREADSHEET_ID, EXCEPTIONS) {
-  const startDate = new Date(startDateStr + "T00:00:00-05:00"); 
-  const endDate = new Date(endDateStr + "T23:59:59-05:00");     
+  // 1. ELIMINAMOS LAS CONVERSIONES. startDateStr y endDateStr ya vienen como texto "YYYY-MM-DD"
   
   let targetMembers = (selection === "All") ? [...PA_TEAM_MEMBERS, ...EXCEPTIONS.map(e => e.name)] : [selection];
   const mainSpreadsheet = SpreadsheetApp.openById(PA_SPREADSHEET_ID);
@@ -84,10 +86,12 @@ function processPAData(selection, startDateStr, endDateStr, PA_SPREADSHEET_ID, E
   targetMembers.forEach(member => {
     let sheetToProcess = null;
     let isException = EXCEPTIONS.find(e => e.name === member);
+    let currentSpreadsheet = mainSpreadsheet; 
 
     if (isException) {
       try {
         const extSs = SpreadsheetApp.openById(isException.spreadsheetId);
+        currentSpreadsheet = extSs;
         const extSheets = extSs.getSheets();
         for (let i = 0; i < extSheets.length; i++) {
           if (extSheets[i].getName().toLowerCase().includes(member.toLowerCase())) {
@@ -110,7 +114,10 @@ function processPAData(selection, startDateStr, endDateStr, PA_SPREADSHEET_ID, E
     }
 
     if (sheetToProcess) {
+      // Tomamos la zona horaria nativa de ESTE Excel en particular (ej. Montevideo) para extraer el texto exacto que tú ves en la pantalla
+      const sheetTz = currentSpreadsheet.getSpreadsheetTimeZone(); 
       const data = sheetToProcess.getDataRange().getValues();
+      
       if (data.length > 1) {
         let headerRowIdx = 0;
         for(let r = 0; r < Math.min(5, data.length); r++) {
@@ -131,14 +138,25 @@ function processPAData(selection, startDateStr, endDateStr, PA_SPREADSHEET_ID, E
           const row = data[r];
           if (dateIdx === -1 || !row[dateIdx]) continue;
           
-          const rowDate = new Date(row[dateIdx]);
-          if (isNaN(rowDate.getTime())) continue;
+          // 2. CONVERTIMOS LA CELDA A TEXTO PURO
+          let rowDateStr = "";
+          if (row[dateIdx] instanceof Date) {
+             // Si Google Sheets lo lee como fecha, extraemos el texto YYYY-MM-DD tal cual se ve en tu monitor
+             rowDateStr = Utilities.formatDate(row[dateIdx], sheetTz, "yyyy-MM-dd");
+          } else {
+             // Si lo tipearon como texto libre
+             let tempD = new Date(row[dateIdx]);
+             if (!isNaN(tempD.getTime())) rowDateStr = Utilities.formatDate(tempD, sheetTz, "yyyy-MM-dd");
+          }
 
-          if (rowDate >= startDate && rowDate <= endDate) {
+          if (!rowDateStr) continue;
+
+          // 3. COMPARACIÓN ALFABÉTICA (Sin cálculos matemáticos de tiempo)
+          if (rowDateStr >= startDateStr && rowDateStr <= endDateStr) {
             allRows.push({
               member: member,
               status: statusIdx !== -1 ? row[statusIdx] : "Unknown",
-              date: Utilities.formatDate(rowDate, "America/New_York", "yyyy-MM-dd"),
+              date: rowDateStr, // Ya es un texto fijo
               medication: medIdx !== -1 ? row[medIdx] : "Unknown",
               insurance: insIdx !== -1 ? row[insIdx] : "Unknown"
             });
@@ -149,7 +167,7 @@ function processPAData(selection, startDateStr, endDateStr, PA_SPREADSHEET_ID, E
   });
 
   let metrics = aggregatePAMetrics(allRows);
-  metrics.selection = selection; // Guardamos el tipo de selección para el Frontend
+  metrics.selection = selection; 
   return metrics;
 }
 
