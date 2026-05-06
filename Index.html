@@ -372,7 +372,6 @@
         }
 
         // --- 2.5 NUEVO: PA METRICS DASHBOARD ---
-        // --- 2.5 NUEVO: PA METRICS DASHBOARD ---
         if (data.paDashboardData) {
           let pa = data.paDashboardData;
           let totalPA = Object.values(pa.statusCounts).reduce((a,b)=>a+b, 0);
@@ -404,6 +403,36 @@
           html += `    <div style='background: white; padding: 15px; border-radius: 6px; border: 1px solid #e1e8ed;'><div style='text-align:center; font-weight:bold; font-size:14px; margin-bottom:10px; color: #2c3e50;' id='paTitle4'>Chart 4</div><div style='position: relative; height: 230px; width: 100%;'><canvas id='paChart4'></canvas></div></div>`;
           html += `  </div>`;
           html += `</div>`;
+
+          // --- TARJETAS NUEVAS: UNCONTACTED Y OVERDUE ---
+          if (isEmployee) {
+              let uncontacted = pa.uncontactedPatients || [];
+              let overdue = pa.overduePAs || [];
+              
+              html += `<div class='report-card' style='border-color: #c0392b; background-color: #fdf2f0; margin-bottom: 25px; page-break-inside: avoid;'>`;
+              html += `  <h4 class='section-title' style='color: #c0392b; border-color: #c0392b; margin-top:0;'>⚠️ Uncontacted PA Patients (This Period)</h4>`;
+              if (uncontacted.length > 0) {
+                  html += `  <p style='font-size:14px; margin-top:0;'>Patients with processed PAs but NO Weave calls/messages found:</p>`;
+                  html += `  <ul style='font-size: 14px;'>`;
+                  uncontacted.forEach(p => html += `<li><strong>${p.name || 'No Name'}</strong> (Chart: ${p.chart || 'N/A'})</li>`);
+                  html += `  </ul>`;
+              } else {
+                  html += `  <p style='color: #27ae60; font-weight: bold; font-size: 14px;'>✅ All PA patients were contacted via Weave!</p>`;
+              }
+              html += `</div>`;
+
+              html += `<div class='report-card' style='border-color: #d35400; background-color: #fdfefe; margin-bottom: 25px; page-break-inside: avoid;'>`;
+              html += `  <h4 class='section-title' style='color: #d35400; border-color: #d35400; margin-top:0;'>⏳ Overdue PAs (> 2 Weeks)</h4>`;
+              if (overdue.length > 0) {
+                  html += `  <p style='font-size:14px; margin-top:0;'>PAs pending/submitted for more than 14 days:</p>`;
+                  html += `  <ul style='font-size: 14px;'>`;
+                  overdue.forEach(p => html += `<li><strong>${p.patient}</strong> (Chart: ${p.chart || 'N/A'}) | Date: ${p.date} | Status: <span style='color:#e67e22;'>${p.status}</span></li>`);
+                  html += `  </ul>`;
+              } else {
+                  html += `  <p style='color: #27ae60; font-weight: bold; font-size: 14px;'>✅ No overdue PAs pending!</p>`;
+              }
+              html += `</div>`;
+          }
 
           // --- SALTO DE PÁGINA OBLIGATORIO ANTES DE WEAVE METRICS ---
           html += `<div class='page-break'></div>`;

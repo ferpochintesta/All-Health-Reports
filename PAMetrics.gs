@@ -71,17 +71,24 @@ function getPAMetricsData(reportMode, teamName, employeeEmail, startDateStr, end
 }
 
 /**
-  Procesa la lectura del Excel y cruza las fechas
- **/
-/**
   Procesa la lectura del Excel como texto puro sin zonas horarias
  **/
 function processPAData(selection, startDateStr, endDateStr, PA_SPREADSHEET_ID, EXCEPTIONS) {
-  // 1. ELIMINAMOS LAS CONVERSIONES. startDateStr y endDateStr ya vienen como texto "YYYY-MM-DD"
-  
   let targetMembers = (selection === "All") ? [...PA_TEAM_MEMBERS, ...EXCEPTIONS.map(e => e.name)] : [selection];
   const mainSpreadsheet = SpreadsheetApp.openById(PA_SPREADSHEET_ID);
   let allRows = [];
+
+  // Configuración de estados pendientes (en minúsculas para comparar fácil)
+  const PENDING_STATUSES = ["in progress", "submitted", "appeal submitted", "appeal in progress", "other", "cart's open"];
+  
+  // Objeto para agrupar: { "Chart_Medicación": { statuses: [], latestEntry: {} } }
+  let paGroups = {}; 
+  let patientsThisPeriod = [];
+
+  const today = new Date();
+  const twoWeeksAgo = new Date();
+  twoWeeksAgo.setDate(today.getDate() - 14);
+  twoWeeksAgo.setHours(0,0,0,0);
 
   targetMembers.forEach(member => {
     let sheetToProcess = null;
@@ -101,7 +108,7 @@ function processPAData(selection, startDateStr, endDateStr, PA_SPREADSHEET_ID, E
         }
         if (!sheetToProcess) sheetToProcess = extSheets[0];
       } catch (e) {
-        Logger.log("Could not open spreadsheet for exception: " + member);
+        Logger.log("Error con excepción: " + member);
       }
     } else {
       const sheets = mainSpreadsheet.getSheets();
@@ -114,7 +121,6 @@ function processPAData(selection, startDateStr, endDateStr, PA_SPREADSHEET_ID, E
     }
 
     if (sheetToProcess) {
-      // Tomamos la zona horaria nativa de ESTE Excel en particular (ej. Montevideo) para extraer el texto exacto que tú ves en la pantalla
       const sheetTz = currentSpreadsheet.getSpreadsheetTimeZone(); 
       const data = sheetToProcess.getDataRange().getValues();
       
@@ -133,30 +139,46 @@ function processPAData(selection, startDateStr, endDateStr, PA_SPREADSHEET_ID, E
         const dateIdx = headers.findIndex(h => h.includes("start date"));
         const medIdx = headers.findIndex(h => h.includes("medication") || h.includes("procedure"));
         const insIdx = headers.findIndex(h => h.includes("insurance") || h.includes("pharmacy plan"));
+        const chartIdx = 3; // Columna D
+        const nameIdx = 4;  // Columna E
 
         for (let r = headerRowIdx + 1; r < data.length; r++) {
           const row = data[r];
           if (dateIdx === -1 || !row[dateIdx]) continue;
           
-          // 2. CONVERTIMOS LA CELDA A TEXTO PURO
-          let rowDateStr = "";
-          if (row[dateIdx] instanceof Date) {
-             // Si Google Sheets lo lee como fecha, extraemos el texto YYYY-MM-DD tal cual se ve en tu monitor
-             rowDateStr = Utilities.formatDate(row[dateIdx], sheetTz, "yyyy-MM-dd");
-          } else {
-             // Si lo tipearon como texto libre
-             let tempD = new Date(row[dateIdx]);
-             if (!isNaN(tempD.getTime())) rowDateStr = Utilities.formatDate(tempD, sheetTz, "yyyy-MM-dd");
+          let rowDateObj = row[dateIdx] instanceof Date ? row[dateIdx] : new Date(row[dateIdx]);
+          if (isNaN(rowDateObj.getTime())) continue;
+
+          let rowDateStr = Utilities.formatDate(rowDateObj, sheetTz, "yyyy-MM-dd");
+          let statusRaw = statusIdx !== -1 ? String(row[statusIdx]).trim() : "Unknown";
+          let statusLower = statusRaw.toLowerCase();
+          let chartNum = String(row[chartIdx] || "").trim();
+          let patName = String(row[nameIdx] || "").trim();
+          let medication = medIdx !== -1 ? String(row[medIdx]).trim().toLowerCase() : "unknown_med";
+
+          // --- LÓGICA DE AGRUPAMIENTO PARA OVERDUE ---
+          if (chartNum) {
+            let groupKey = chartNum + "_" + medication;
+            if (!paGroups[groupKey]) {
+              paGroups[groupKey] = { statuses: [], entries: [] };
+            }
+            paGroups[groupKey].statuses.push(statusLower);
+            paGroups[groupKey].entries.push({
+              date: rowDateStr,
+              dateObj: rowDateObj,
+              status: statusRaw,
+              patient: patName || "Unknown",
+              chart: chartNum,
+              medication: medication
+            });
           }
 
-          if (!rowDateStr) continue;
-
-          // 3. COMPARACIÓN ALFABÉTICA (Sin cálculos matemáticos de tiempo)
+          // Métricas normales (volumen diario, etc.)
           if (rowDateStr >= startDateStr && rowDateStr <= endDateStr) {
+            if (patName || chartNum) patientsThisPeriod.push({ chart: chartNum, name: patName });
+
             allRows.push({
-              member: member,
-              status: statusIdx !== -1 ? row[statusIdx] : "Unknown",
-              date: rowDateStr, // Ya es un texto fijo
+              member: member, status: statusRaw, date: rowDateStr,
               medication: medIdx !== -1 ? row[medIdx] : "Unknown",
               insurance: insIdx !== -1 ? row[insIdx] : "Unknown"
             });
@@ -166,8 +188,34 @@ function processPAData(selection, startDateStr, endDateStr, PA_SPREADSHEET_ID, E
     }
   });
 
+  // --- FILTRADO FINAL DE ATRASADOS (OVERDUE) ---
+  let finalOverdue = [];
+  for (let key in paGroups) {
+    let group = paGroups[key];
+    
+    // Regla 1: ¿Todos los estados de este grupo (Paciente+Med) son pendientes?
+    let allArePending = group.statuses.every(s => PENDING_STATUSES.includes(s));
+    
+    if (allArePending) {
+      // Regla 2: Si todos son pendientes, buscamos la entrada más reciente
+      group.entries.sort((a, b) => b.dateObj.getTime() - a.dateObj.getTime());
+      let latest = group.entries[0];
+      
+      // Regla 3: ¿La fecha más reciente es de hace más de 2 semanas?
+      if (latest.dateObj < twoWeeksAgo) {
+        finalOverdue.push(latest);
+      }
+    }
+    // Si hay aunque sea uno que NO es pendiente (ej. Approved), el hilo se ignora completo.
+  }
+
   let metrics = aggregatePAMetrics(allRows);
   metrics.selection = selection; 
+  metrics.patientsThisPeriod = patientsThisPeriod;
+  
+  finalOverdue.sort((a, b) => a.date > b.date ? 1 : -1);
+  metrics.overduePAs = finalOverdue;
+  
   return metrics;
 }
 

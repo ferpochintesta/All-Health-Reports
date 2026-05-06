@@ -42,27 +42,21 @@ function doGet() {
 }
 
 function getTeamsFromSheet() {
-  var cache = CacheService.getScriptCache();
-  var cachedData = cache.get("TEAMS_DB");
-  
-  // Si ya tenemos los equipos en caché, los devolvemos instantáneamente
-  if (cachedData) {
-    return JSON.parse(cachedData);
-  }
-
   try {
-    if (SPREADSHEET_ID === "PEGAR_AQUI_EL_ID_DE_TU_GOOGLE_SHEET") return { status: "error", message: "Please configure SPREADSHEET_ID in Code.gs" };
-    var SHEET_NAME = 'Data';
-    var sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_NAME);
+    if (!SPREADSHEET_ID) return { status: "error", message: "SPREADSHEET_ID is missing" };
+    
+    var sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName('Data');
     var data = sheet.getDataRange().getValues();
-    if (data.length < 2) return { status: "error", message: "Sheet is empty or missing data." };
+    if (data.length < 2) return { status: "error", message: "Sheet is empty." };
 
     var headers = data[0].map(function(h) { return h.toString().toLowerCase().trim(); });
     var teamIdx = headers.indexOf("team");
     var idIdx = headers.indexOf("id");
     var nameIdx = headers.indexOf("name");
 
-    if (teamIdx === -1 || idIdx === -1 || nameIdx === -1) return { status: "error", message: "Spreadsheet must have columns: Team, ID, Name" };
+    if (teamIdx === -1 || idIdx === -1 || nameIdx === -1) {
+        return { status: "error", message: "Missing columns" };
+    }
 
     var teamsMap = {};
     for (var i = 1; i < data.length; i++) {
@@ -76,13 +70,12 @@ function getTeamsFromSheet() {
       }
     }
     
-    var result = { status: "success", data: teamsMap };
+    // Devolvemos el resultado directamente sin guardarlo en caché
+    return { status: "success", data: teamsMap };
     
-    // Guardamos el resultado en caché por 3600 segundos (1 hora)
-    cache.put("TEAMS_DB", JSON.stringify(result), 3600); 
-    
-    return result;
-  } catch (e) { return { status: "error", message: "Error reading Sheet: " + e.message }; }
+  } catch (e) { 
+    return { status: "error", message: "Error reading Sheet: " + e.message }; 
+  }
 }
 
 function processUserFilters(form) {
@@ -94,13 +87,18 @@ function processUserFilters(form) {
   
   var teamMembers = [];
   var teamsDb = getTeamsFromSheet(); // Esto ahora es ultra rápido gracias al caché
+
+  if (!teamsDb) {
+      teamsDb = { status: 'error', data: {} };
+  }
   
   if (reportMode === 'teams' && teamName) {
-    if (teamsDb.status === 'success' && teamsDb.data[teamName]) teamMembers = teamsDb.data[teamName];
+    // Agregamos 'teamsDb &&' para asegurar que la variable exista antes de leerla
+    if (teamsDb && teamsDb.status === 'success' && teamsDb.data[teamName]) teamMembers = teamsDb.data[teamName];
   }
   else if (reportMode === 'employee' && rawEmployeeInput) {
     // --- NUEVO: BÚSQUEDA INTELIGENTE EN RRHH ---
-    if (teamsDb.status === 'success') {
+    if (teamsDb && teamsDb.status === 'success') {
       var searchLower = rawEmployeeInput.toLowerCase();
       var foundId = null;
       
@@ -145,7 +143,8 @@ function processUserFilters(form) {
     callResults: { answered: 0, missed: 0, abandoned: 0, other: 0 },
     busiestDay: { calls: [0,0,0,0,0,0,0], sms: [0,0,0,0,0,0,0], dayCounts: [0,0,0,0,0,0,0] },
     busiestHour: { calls: Array(24).fill(0), sms: Array(24).fill(0), dayCount: 0 },
-    activeSpans: {}
+    activeSpans: {},
+    contactedPatients: { ids: {}, names: {} }
   };
 
   // Pre-calcular cuántos lunes, martes, etc., hay en el rango para sacar promedios exactos
@@ -202,9 +201,33 @@ function processUserFilters(form) {
       var callLogData = getCallLogMetrics(finalName);
 
       // 1. OBTENER DATOS DE PA PRIMERO (Para cruzarlo con Asistencia)
-      // Pasamos también 'finalName' para asegurar el match perfecto de Anna
       var paDashboardData = getPAMetricsData(reportMode, teamName, officialEmployeeEmail, form.startDate, form.endDate, finalName);
       var paDaily = paDashboardData ? paDashboardData.dailyCounts : null;
+
+      // --- NUEVO: CRUCE DE PACIENTES PA VS WEAVE ---
+      if (paDashboardData) {
+          var uncontacted = [];
+          var pList = paDashboardData.patientsThisPeriod || [];
+          var cNames = metrics.contactedPatients.names;
+          var cIds = metrics.contactedPatients.ids;
+          var uniquePAs = {};
+          
+          pList.forEach(function(p) {
+             if (!p.name && !p.chart) return;
+             var key = p.chart + "_" + p.name;
+             if (uniquePAs[key]) return; // Evitar duplicados si hizo varias PA al mismo paciente
+             uniquePAs[key] = true;
+             
+             var found = false;
+             // Busca primero por Chart # exacto, luego por nombre (ignora mayúsculas/minúsculas)
+             if (p.chart && cIds[p.chart]) found = true;
+             else if (p.name && cNames[p.name.toLowerCase()]) found = true;
+             
+             if (!found) uncontacted.push(p);
+          });
+          paDashboardData.uncontactedPatients = uncontacted;
+      }
+      // ---------------------------------------------
 
       // 2. INACTIVITY GAPS: Solo calcular si el equipo incluye "VA"
       var isVATeam = finalTeam && finalTeam.toUpperCase().indexOf("VA") !== -1;
@@ -306,8 +329,9 @@ function processFolder(folderId, prefix, months, startDt, endDt, reportMode, ema
         var patIdx = headers.indexOf('Patient Name');
         var durIdx = headers.indexOf('Duration');
         var cTypeIdx = headers.indexOf('Call Type');
-        var resIdx = headers.indexOf('Result'); // NUEVO
-        var smsTypeIdx = headers.indexOf('SMS Type'); // NUEVO
+        var resIdx = headers.indexOf('Result');
+        var smsTypeIdx = headers.indexOf('SMS Type');
+        var chartIdx = headers.indexOf('Patient ID');
 
         if (dateIdx === -1) continue;
 
@@ -364,6 +388,11 @@ function processFolder(folderId, prefix, months, startDt, endDt, reportMode, ema
               }
 
               metrics.agentVolume[rowUser] = (metrics.agentVolume[rowUser] || 0) + 1;
+
+              var pName = patIdx > -1 && row[patIdx] ? row[patIdx].trim().toLowerCase() : "";
+              var pId = chartIdx > -1 && row[chartIdx] ? row[chartIdx].trim() : "";
+              if (pName) metrics.contactedPatients.names[pName] = true;
+              if (pId) metrics.contactedPatients.ids[pId] = true;
 
               if (type === 'calls') {
                 metrics.calls.total++;
