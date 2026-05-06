@@ -26,7 +26,7 @@ const PA_TEAM_MEMBERS = ["Krizza", "Mark", "Giovanni", "Roan", "Anthoney", "Czar
 /**
  * Función principal llamada desde Code.gs para evaluar e inyectar métricas de PA
  */
-function getPAMetricsData(reportMode, teamName, employeeEmail, startDateStr, endDateStr) {
+function getPAMetricsData(reportMode, teamName, employeeEmail, startDateStr, endDateStr, finalName) {
   const scriptProps = PropertiesService.getScriptProperties();
   
   // IMPORTANTE: Asegúrate de guardar estas propiedades en el script de Reports
@@ -50,12 +50,14 @@ function getPAMetricsData(reportMode, teamName, employeeEmail, startDateStr, end
     }
   }
   // 2. Verificar si se está pidiendo el reporte de un Empleado que pertenece a PA
-  else if (reportMode === 'employee' && employeeEmail) {
-    let emailPrefix = employeeEmail.split('@')[0].toLowerCase();
+  else if (reportMode === 'employee') {
+    // Unimos el email de Weave y el nombre del HR Sheet en una sola cadena a prueba de balas
+    let searchString = ((employeeEmail || "") + " " + (finalName || "")).toLowerCase();
+    
     for (let i = 0; i < allPAMembers.length; i++) {
-      let memberName = allPAMembers[i].toLowerCase();
-      // Buscamos coincidencia (ej: "krizza" dentro de "krizzajohnson@...")
-      if (emailPrefix.includes(memberName) || memberName.includes(emailPrefix)) {
+      let memberName = allPAMembers[i].toLowerCase().trim();
+      // Si la cadena combinada incluye "anna", el match es exitoso
+      if (searchString.includes(memberName)) {
         selection = allPAMembers[i];
         break;
       }
@@ -136,7 +138,7 @@ function processPAData(selection, startDateStr, endDateStr, PA_SPREADSHEET_ID, E
             allRows.push({
               member: member,
               status: statusIdx !== -1 ? row[statusIdx] : "Unknown",
-              date: Utilities.formatDate(rowDate, "EST", "yyyy-MM-dd"),
+              date: Utilities.formatDate(rowDate, "America/New_York", "yyyy-MM-dd"),
               medication: medIdx !== -1 ? row[medIdx] : "Unknown",
               insurance: insIdx !== -1 ? row[insIdx] : "Unknown"
             });

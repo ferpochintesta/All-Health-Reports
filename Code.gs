@@ -42,6 +42,14 @@ function doGet() {
 }
 
 function getTeamsFromSheet() {
+  var cache = CacheService.getScriptCache();
+  var cachedData = cache.get("TEAMS_DB");
+  
+  // Si ya tenemos los equipos en caché, los devolvemos instantáneamente
+  if (cachedData) {
+    return JSON.parse(cachedData);
+  }
+
   try {
     if (SPREADSHEET_ID === "PEGAR_AQUI_EL_ID_DE_TU_GOOGLE_SHEET") return { status: "error", message: "Please configure SPREADSHEET_ID in Code.gs" };
     var SHEET_NAME = 'Data';
@@ -67,20 +75,55 @@ function getTeamsFromSheet() {
         teamsMap[teamName].push({ id: empId.toLowerCase(), name: empName || empId });
       }
     }
-    return { status: "success", data: teamsMap };
+    
+    var result = { status: "success", data: teamsMap };
+    
+    // Guardamos el resultado en caché por 3600 segundos (1 hora)
+    cache.put("TEAMS_DB", JSON.stringify(result), 3600); 
+    
+    return result;
   } catch (e) { return { status: "error", message: "Error reading Sheet: " + e.message }; }
 }
 
 function processUserFilters(form) {
   var reportMode = form.reportMode || 'employee'; 
-  var employee = form.employeeEmail ? form.employeeEmail.trim() : "";
+  var rawEmployeeInput = form.employeeEmail ? form.employeeEmail.trim() : "";
+  var employee = rawEmployeeInput; // Por defecto es lo que escribió el usuario
   var locationFilter = form.locationFilter || 'All'; 
   var teamName = form.teamFilter || '';
   
   var teamMembers = [];
+  var teamsDb = getTeamsFromSheet(); // Esto ahora es ultra rápido gracias al caché
+  
   if (reportMode === 'teams' && teamName) {
-    var teamsDb = getTeamsFromSheet();
     if (teamsDb.status === 'success' && teamsDb.data[teamName]) teamMembers = teamsDb.data[teamName];
+  }
+  else if (reportMode === 'employee' && rawEmployeeInput) {
+    // --- NUEVO: BÚSQUEDA INTELIGENTE EN RRHH ---
+    if (teamsDb.status === 'success') {
+      var searchLower = rawEmployeeInput.toLowerCase();
+      var foundId = null;
+      
+      for (var t in teamsDb.data) {
+        var members = teamsDb.data[t];
+        for (var i = 0; i < members.length; i++) {
+          var mEmail = members[i].id.toLowerCase();
+          var mName = members[i].name.toLowerCase();
+          
+          // Match si: 1. El email es exacto, 2. La búsqueda está en el nombre (ej. "Orioha" en "Janet Orioha"), 3. El nombre está en la búsqueda
+          if (mEmail === searchLower || mName.indexOf(searchLower) !== -1 || searchLower.indexOf(mName) !== -1) {
+            foundId = members[i].id;
+            break;
+          }
+        }
+        if (foundId) break; // Si ya lo encontró, dejamos de buscar
+      }
+      
+      // Si hubo match en el Excel, reemplazamos el texto ingresado por el EMAIL OFICIAL
+      if (foundId) {
+        employee = foundId; 
+      }
+    }
   }
   
   var startParts = form.startDate.split("-");
@@ -158,9 +201,21 @@ function processUserFilters(form) {
       var finalSchedule = employeeProfile ? employeeProfile.schedule : null;
       var callLogData = getCallLogMetrics(finalName);
 
-      // Le pasamos finalSchedule (Excel) y form (Web) a ambas funciones
-      if (channel === 'both') gaps = calculateGaps(interactionsTimeline, finalSchedule, form);
-      if (channel === 'both' && (finalSchedule || form.useSchedule === 'true')) attendance = evaluateAttendance(startDate, endDate, finalSchedule, form, metrics.calls.daily, metrics.sms.daily, channel);
+      // 1. OBTENER DATOS DE PA PRIMERO (Para cruzarlo con Asistencia)
+      // Pasamos también 'finalName' para asegurar el match perfecto de Anna
+      var paDashboardData = getPAMetricsData(reportMode, teamName, officialEmployeeEmail, form.startDate, form.endDate, finalName);
+      var paDaily = paDashboardData ? paDashboardData.dailyCounts : null;
+
+      // 2. INACTIVITY GAPS: Solo calcular si el equipo incluye "VA"
+      var isVATeam = finalTeam && finalTeam.toUpperCase().indexOf("VA") !== -1;
+      if (channel === 'both' && isVATeam) {
+        gaps = calculateGaps(interactionsTimeline, finalSchedule, form);
+      }
+
+      // 3. ASISTENCIA: Cruzamos llamadas, SMS y ahora también PA (paDaily)
+      if (channel === 'both' && (finalSchedule || form.useSchedule === 'true')) {
+        attendance = evaluateAttendance(startDate, endDate, finalSchedule, form, metrics.calls.daily, metrics.sms.daily, channel, paDaily);
+      }
       
       // Calcular "Pace" (Ritmo de trabajo) para Empleado
       var totalHours = 0;
@@ -203,7 +258,9 @@ function processUserFilters(form) {
   smsData.avgDailyPatients = calculateAvgDailyPatients(metrics.sms.dailyPatients);
   insights.avgDailyPatients = calculateAvgDailyPatients(metrics.dailyPatients);
 
-  var paDashboardData = getPAMetricsData(reportMode, teamName, officialEmployeeEmail, form.startDate, form.endDate);
+  if (reportMode !== 'employee') {
+      var paDashboardData = getPAMetricsData(reportMode, teamName, officialEmployeeEmail, form.startDate, form.endDate, officialEmployeeEmail);
+  }
 
   return {
     status: "success",
@@ -511,10 +568,20 @@ function formatDurationStr(m){if(m<60)return m+" mins";var h=Math.floor(m/60),mi
 function calculateDailyStats(doj,t){var d=Object.keys(doj);if(d.length===0)return{avg:0,maxDay:"N/A",maxVal:0,minDay:"N/A",minVal:0};var a=[];for(var k in doj)a.push({date:k,count:doj[k]});a.sort(function(x,y){return y.count-x.count;});return{avg:Math.round(t/d.length),maxDay:a[0].date,maxVal:a[0].count,minDay:a[a.length-1].date,minVal:a[a.length-1].count};}
 function formatTimeAMPM(d){var h=d.getHours(),m=d.getMinutes(),a=h>=12?'PM':'AM';h=h%12||12;m=m<10?'0'+m:m;return h+':'+m+' '+a;}
 
-function evaluateAttendance(s,e,schedule,f,cd,sd,c){
+function evaluateAttendance(s,e,schedule,f,cd,sd,c,paDaily){
   var ex=[f.wd_0==='true',f.wd_1==='true',f.wd_2==='true',f.wd_3==='true',f.wd_4==='true',f.wd_5==='true',f.wd_6==='true'],ad={};
   if(c==='calls'||c==='both')for(var d in cd)ad[d]=true;
   if(c==='sms'||c==='both')for(var d in sd)ad[d]=true;
+  
+  // NUEVO: Agregar días trabajados en Prior Auth al registro de asistencia
+  if(paDaily){
+    for(var pd in paDaily){
+      var pParts = pd.split("-"); // PA viene como YYYY-MM-DD
+      var pStr = parseInt(pParts[1],10) + "/" + parseInt(pParts[2],10) + "/" + pParts[0];
+      ad[pStr] = true;
+    }
+  }
+  
   var ab=[],ow=[],cu=new Date(s),dn=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"],mn=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
   while(cu<=e){
     var dw=cu.getDay();

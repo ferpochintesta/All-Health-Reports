@@ -202,13 +202,21 @@
         ['wdStart', 'wdEnd', 'weStart', 'weEnd', 'wdLunch', 'weLunch'].forEach(id => { document.getElementById(id).innerHTML = options; });
 
         const today = new Date();
-        const firstDay = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-        const lastDay = new Date(today.getFullYear(), today.getMonth(), 0);
+        const dayOfWeek = today.getDay();
+
+        // Calculamos cuántos días restar para llegar al último domingo
+        const daysToLastSunday = dayOfWeek === 0 ? 7 : dayOfWeek;
+
+        const lastSunday = new Date(today);
+        lastSunday.setDate(today.getDate() - daysToLastSunday);
+        
+        const lastMonday = new Date(lastSunday);
+        lastMonday.setDate(lastSunday.getDate() - 6);
 
         flatpickr("#dateRange", {
             mode: "range",
             dateFormat: "Y-m-d",
-            defaultDate: [firstDay, lastDay], // Se auto-llena con el mes pasado
+            defaultDate: [lastMonday, lastSunday], // Se auto-llena con el mes pasado
             maxDate: "today", // Opcional: Evita que seleccionen fechas del futuro
             onChange: function(selectedDates, dateStr, instance) {
                 // Validación en tiempo real: Si eligen más de 31 días, les avisa y borra
@@ -364,28 +372,41 @@
         }
 
         // --- 2.5 NUEVO: PA METRICS DASHBOARD ---
+        // --- 2.5 NUEVO: PA METRICS DASHBOARD ---
         if (data.paDashboardData) {
-          html += `<div class='report-card' style='border-color: #2980b9; background-color: #f0f8ff; margin-bottom: 25px;'>`;
-          html += `  <h4 class='section-title' style='color: #2980b9; border-color: #2980b9; margin-top:0;'>📋 Prior Authorization (PA) Metrics</h4>`;
-          
           let pa = data.paDashboardData;
           let totalPA = Object.values(pa.statusCounts).reduce((a,b)=>a+b, 0);
           let approvedPA = pa.statusCounts["APPROVED"] || 0;
           let completePA = pa.statusCounts["COMPLETE"] || 0;
           
+          // --- TARJETA 1: PÁGINA 1 (Encabezado, Totales y Gráficas 1 y 2) ---
+          html += `<div class='report-card' style='border-color: #2980b9; background-color: #f0f8ff; margin-bottom: 25px; page-break-inside: avoid;'>`;
+          html += `  <h4 class='section-title' style='color: #2980b9; border-color: #2980b9; margin-top:0;'>📋 Prior Authorization (PA) Metrics</h4>`;
           html += `  <ul style='margin-bottom: 20px;'>`;
           html += `    <li><strong>Total PAs Processed:</strong> ${totalPA}</li>`;
           html += `    <li><strong>Approved / Complete Status:</strong> ${approvedPA + completePA}</li>`;
           html += `  </ul>`;
           
-          // Contenedor en columna para las 4 gráficas del Dashboard de PA (1 por fila)
-          html += `  <div id='paChartsContainer' style='display: flex; flex-direction: column; gap: 25px;'>`;
-          html += `    <div style='background: white; padding: 15px; border-radius: 6px; border: 1px solid #e1e8ed;'><div style='text-align:center; font-weight:bold; font-size:14px; margin-bottom:10px; color: #2c3e50;' id='paTitle1'>Chart 1</div><canvas id='paChart1'></canvas></div>`;
-          html += `    <div style='background: white; padding: 15px; border-radius: 6px; border: 1px solid #e1e8ed;'><div style='text-align:center; font-weight:bold; font-size:14px; margin-bottom:10px; color: #2c3e50;' id='paTitle2'>Chart 2</div><canvas id='paChart2'></canvas></div>`;
-          html += `    <div style='background: white; padding: 15px; border-radius: 6px; border: 1px solid #e1e8ed;'><div style='text-align:center; font-weight:bold; font-size:14px; margin-bottom:10px; color: #2c3e50;' id='paTitle3'>Chart 3</div><canvas id='paChart3'></canvas></div>`;
-          html += `    <div style='background: white; padding: 15px; border-radius: 6px; border: 1px solid #e1e8ed;'><div style='text-align:center; font-weight:bold; font-size:14px; margin-bottom:10px; color: #2c3e50;' id='paTitle4'>Chart 4</div><canvas id='paChart4'></canvas></div>`;
+          html += `  <div style='display: flex; flex-direction: column; gap: 20px;'>`;
+          // Nota: El div interno con height:230px obliga a la gráfica a ser compacta
+          html += `    <div style='background: white; padding: 15px; border-radius: 6px; border: 1px solid #e1e8ed;'><div style='text-align:center; font-weight:bold; font-size:14px; margin-bottom:10px; color: #2c3e50;' id='paTitle1'>Chart 1</div><div style='position: relative; height: 230px; width: 100%;'><canvas id='paChart1'></canvas></div></div>`;
+          html += `    <div style='background: white; padding: 15px; border-radius: 6px; border: 1px solid #e1e8ed;'><div style='text-align:center; font-weight:bold; font-size:14px; margin-bottom:10px; color: #2c3e50;' id='paTitle2'>Chart 2</div><div style='position: relative; height: 230px; width: 100%;'><canvas id='paChart2'></canvas></div></div>`;
           html += `  </div>`;
           html += `</div>`;
+
+          // --- SALTO DE PÁGINA OBLIGATORIO HACIA LA PÁGINA 2 ---
+          html += `<div class='page-break'></div>`;
+
+          // --- TARJETA 2: PÁGINA 2 (Gráficas 3 y 4) ---
+          html += `<div class='report-card' style='border-color: #2980b9; background-color: #f0f8ff; margin-bottom: 25px; page-break-inside: avoid;'>`;
+          html += `  <div style='display: flex; flex-direction: column; gap: 20px;'>`;
+          html += `    <div style='background: white; padding: 15px; border-radius: 6px; border: 1px solid #e1e8ed;'><div style='text-align:center; font-weight:bold; font-size:14px; margin-bottom:10px; color: #2c3e50;' id='paTitle3'>Chart 3</div><div style='position: relative; height: 230px; width: 100%;'><canvas id='paChart3'></canvas></div></div>`;
+          html += `    <div style='background: white; padding: 15px; border-radius: 6px; border: 1px solid #e1e8ed;'><div style='text-align:center; font-weight:bold; font-size:14px; margin-bottom:10px; color: #2c3e50;' id='paTitle4'>Chart 4</div><div style='position: relative; height: 230px; width: 100%;'><canvas id='paChart4'></canvas></div></div>`;
+          html += `  </div>`;
+          html += `</div>`;
+
+          // --- SALTO DE PÁGINA OBLIGATORIO ANTES DE WEAVE METRICS ---
+          html += `<div class='page-break'></div>`;
         }
 
         // --- 3. WEAVE METRICS ---
@@ -426,7 +447,7 @@
              data.topAgents.slice(0, 5).forEach(ag => html += `<li><strong>${ag.name}</strong>: ${ag.count} interactions</li>`);
              html += `</ul>`;
           }
-          if (isTeam && data.teamStats) {
+          if (isTeam && data.teamStats && !data.paDashboardData) {
              const teamMembersArr = Object.keys(data.teamStats).map(k => data.teamStats[k]);
              teamMembersArr.sort((a, b) => b.avgDailyPatients - a.avgDailyPatients);
              html += `<p style='margin: 10px 0 5px 0; font-size: 14px; color: #8e44ad;'><strong>🏆 Top Team Members (Avg Patients/Day):</strong></p><ul>`;
@@ -482,8 +503,8 @@
           html += `<div class='page-break'></div>`;
         }
 
-        // --- 6. INACTIVITY GAPS ---
-        if (isEmployee && data.channel === 'both') {
+        // --- 6. INACTIVITY GAPS (SOLO EQUIPO VA) ---
+        if (isEmployee && data.channel === 'both' && data.employeeTeam && data.employeeTeam.toUpperCase().includes('VA')) {
           html += `<div class='report-card' style='border-color: #e74c3c;'><h4 class='section-title title-gaps' style='margin-top:0;'>⚠️ Inactivity Gaps</h4>`;
           if (data.gaps && data.gaps.length > 0) {
             data.gaps.forEach(dayObj => { html += `<div class='day-group'><div class='day-header'>📅 ${dayObj.date}</div>`; dayObj.items.forEach(gap => html += `<div class='gap-item'>🕒 ${gap.startStr} to ${gap.endStr} <strong>(${gap.durationStr})</strong></div>`); html += `</div>`; });
@@ -779,6 +800,7 @@
             },
             options: {
               responsive: true,
+              maintainAspectRatio: false,
               indexAxis: isHorizontal ? 'y' : 'x',
               plugins: { legend: { display: type === 'pie' || type === 'doughnut' } }
             }
