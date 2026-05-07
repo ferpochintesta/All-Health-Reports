@@ -699,10 +699,12 @@
           ? `Performance_Team_Report_${cleanName}_${data.startDate}_to_${data.endDate}.pdf` 
           : `Performance_Report_${cleanName}_${data.startDate}_to_${data.endDate}.pdf`;
 
+        const teamName = data.employeeTeam || data.teamFilter || "";
+
         google.script.run
           .withSuccessHandler(() => { btn.innerHTML = "✅ Saved!"; setTimeout(() => { btn.innerHTML = originalText; btn.disabled = false; }, 3000); })
           .withFailureHandler((err) => { alert("Error: " + err.message); btn.innerHTML = originalText; btn.disabled = false; })
-          .createPdfInDrive(htmlString, fileName, data.endDate);
+          .createPdfInDrive(htmlString, fileName, data.endDate, teamName);
       }
 
       // ======================================================================
@@ -736,6 +738,13 @@
         const cleanTeamName = (data.teamFilter || "Team").replace(/[^a-zA-Z0-9\s]/g, "").trim().replace(/\s+/g, "_");
         const teamFileName = `Performance_Team_Report_${cleanTeamName}_${data.startDate}_to_${data.endDate}.pdf`;
 
+        const actualTeamName = data.employeeTeam || data.teamFilter || "Team"; 
+        const cleanTeamName = actualTeamName.replace(/[^a-zA-Z0-9\s]/g, "").trim().replace(/\s+/g, "_");
+        const teamFileName = `Performance_Team_Report_${cleanTeamName}_${data.startDate}_to_${data.endDate}.pdf`;
+
+        // CORRECCIÓN: Pasamos el nombre real detectado
+        const teamNameForDrive = actualTeamName;
+
         btn.innerHTML = "⏳ Saving Team Summary...";
         google.script.run
           .withSuccessHandler(() => {
@@ -746,7 +755,7 @@
           .withFailureHandler((err) => {
               alert("Failed to save Team Report: " + err.message);
               btn.innerHTML = "👥 Generate Individual Reports"; btn.disabled = false;
-          }).createPdfInDrive(htmlString, teamFileName, data.endDate);
+          }).createPdfInDrive(htmlString, teamFileName, data.endDate, teamNameForDrive); // <- NUEVO: Se agregó 'teamNameForDrive'
       }
 
       function processNextTeamMember() {
@@ -802,7 +811,7 @@
                 }).withFailureHandler((err) => {
                     console.error(`Failed saving ${member.name}: ` + err.message);
                     processNextTeamMember(); // Falla -> Siguiente en la cola
-                }).createPdfInDrive(htmlString, fileName, response.data.endDate);
+                }).createPdfInDrive(htmlString, fileName, response.data.endDate, response.data.employeeTeam); // <- NUEVO: Se agregó 'response.data.employeeTeam'
 
             }, 600); 
 
