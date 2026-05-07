@@ -9,6 +9,7 @@ const GEMINI_API_KEY = scriptProps.getProperty('GEMINI_API_KEY');
 const SPREADSHEET_ID = scriptProps.getProperty('SPREADSHEET_ID');
 const CALL_LOG_SHEET_ID = scriptProps.getProperty('CALL_LOG_SHEET_ID');
 const REPORTS_PARENT_FOLDER_ID = scriptProps.getProperty('REPORTS_PARENT_FOLDER_ID');
+const PA_REPORTS_PARENT_FOLDER_ID = scriptProps.getProperty('PA_REPORTS_PARENT_FOLDER_ID');
 
 const AUTHORIZED_MANAGERS = [
   "genesiscastillo@allhealthmedgroup.com", 
@@ -671,19 +672,73 @@ function runGeminiAnalysis(payload) {
       }
     }
 
-    if (smsCount === 0) return "<b>Notice:</b> No SMS conversations found.";
-    var allPatients = Object.keys(conversations); 
-    var shuffledPatients = shuffleArray(allPatients); 
-    var selectedPatients = shuffledPatients.slice(0, 40); 
-    var conversationLog = ""; selectedPatients.forEach(function(p) { conversationLog += "--- Patient: " + p + " ---\n" + conversations[p].join("\n") + "\n\n"; });
+    // --- NUEVO: CONDICIÓN MODIFICADA ---
+    // Ahora permite generar el reporte AI si no hay SMS pero SÍ hay datos de PA
+    if (smsCount === 0 && !statsData.paDashboardData) return "<b>Notice:</b> No Weave SMS or PA data found to analyze.";
+    
+    var conversationLog = ""; 
+    if (smsCount > 0) {
+        var allPatients = Object.keys(conversations); 
+        var shuffledPatients = shuffleArray(allPatients); 
+        var selectedPatients = shuffledPatients.slice(0, 40); 
+        selectedPatients.forEach(function(p) { conversationLog += "--- Patient: " + p + " ---\n" + conversations[p].join("\n") + "\n\n"; });
+    } else {
+        conversationLog = "No Weave SMS conversations found for this period.\n\n";
+    }
+    
+    // --- NUEVO: PREPARAR CONTEXTO DE PA PARA LA INTELIGENCIA ARTIFICIAL ---
+    var paContext = "";
+    var hasPA = statsData.paDashboardData ? true : false;
+    
+    if (hasPA) {
+       var pa = statsData.paDashboardData;
+       paContext += "=== PRIOR AUTHORIZATION (PA) METRICS ===\n";
+       
+       var totalPA = 0;
+       for (var k in pa.statusCounts) totalPA += pa.statusCounts[k];
+       paContext += "Total PAs Handled: " + totalPA + "\n";
+       paContext += "Status Breakdown: Approved: " + (pa.statusCounts["APPROVED"] || 0) + ", Denied: " + (pa.statusCounts["DENIED"] || 0) + ", Complete: " + (pa.statusCounts["COMPLETE"] || 0) + ", In Progress: " + (pa.statusCounts["IN PROGRESS"] || 0) + "\n";
+       
+       if (pa.uncontactedPatients && pa.uncontactedPatients.length > 0) {
+           paContext += "WARNING - Uncontacted PA Patients (No Weave calls/SMS found): " + pa.uncontactedPatients.length + " patients.\n";
+       } else {
+           paContext += "Good - All PA patients were contacted via Weave.\n";
+       }
+       
+       if (pa.overduePAs && pa.overduePAs.length > 0) {
+           paContext += "CRITICAL WARNING - Overdue PAs (Pending > 14 days): " + pa.overduePAs.length + " cases.\n";
+           // Limitamos a 10 para no saturar la memoria de la IA en equipos muy grandes
+           var maxOverdue = Math.min(10, pa.overduePAs.length);
+           for (var x = 0; x < maxOverdue; x++) {
+               var op = pa.overduePAs[x];
+               paContext += "- " + op.patient + " | " + op.medication + " | " + op.status + " | Since: " + op.date + "\n";
+           }
+       } else {
+           paContext += "Good - No overdue PAs pending.\n";
+       }
+       paContext += "\n\n";
+    }
+
+    // --- NUEVO: INYECTAR CONTEXTO DE PA EN LOS PROMPTS Y PEDIR ANÁLISIS ---
     var prompt = "";
 
     if (reportMode === 'employee') {
-        prompt = "Act as a QA Manager for All Health Medical Group. Audit this specific employee.\n\nTRANSCRIPTS:\n" + conversationLog + "\nProvide EXACTLY this HTML structure. Do not use Markdown:\n1. <b>Overall Quality:</b> [Score]/10 - [Phrase]<br><br>\n2. <b>Professional Tone:</b> [Score]/10<br><i>Feedback:</i> [Phrase]<br><i>Example:</i> '[Quote]'<br><br>\n3. <b>Clarity & Grammar:</b> [Score]/10<br><i>Feedback:</i> [Phrase]<br><i>Example:</i> '[Quote]'<br><br>\n4. <b>First Contact Resolution:</b> [Score]/10<br><br>\n5. <b>Manager Feedback:</b><br><ul><li>[Point 1]</li></ul>\n6. <b>Recommendations:</b><br><ul><li>[Rec 1]</li></ul>\n";
+        prompt = "Act as a QA Manager for All Health Medical Group. Audit this specific employee.\n\n" + paContext + "TRANSCRIPTS:\n" + conversationLog + "\nProvide EXACTLY this HTML structure. Do not use Markdown:\n1. <b>Overall Quality:</b> [Score]/10 - [Phrase]<br><br>\n2. <b>Professional Tone:</b> [Score]/10<br><i>Feedback:</i> [Phrase]<br><i>Example:</i> '[Quote]'<br><br>\n3. <b>Clarity & Grammar:</b> [Score]/10<br><i>Feedback:</i> [Phrase]<br><i>Example:</i> '[Quote]'<br><br>\n4. <b>First Contact Resolution:</b> [Score]/10<br><br>\n5. <b>Manager Feedback:</b><br><ul><li>[Point 1]</li></ul>\n6. <b>Recommendations:</b><br><ul><li>[Rec 1]</li></ul>\n";
+        
+        // Agregar pregunta específica de PA si corresponde
+        if (hasPA) {
+            prompt += "7. <b>PA Quality & Alerts:</b><br><ul><li>[Analyze PA volume, uncontacted patients, and OVERDUE cases. Specifically remind the employee to update statuses or follow up on overdue cases.]</li></ul>\n";
+        }
+        
     } else if (reportMode === 'global') {
-        prompt = "Act as an Operations Director. Analyze this random sample of recent SMS traffic for: " + locationName + "\n\nTRANSCRIPTS:\n" + conversationLog + "\nProvide EXACTLY this HTML structure. Do not use Markdown:\n1. <b>Patient Sentiment & Tone:</b> [Positive/Neutral/Negative] - [Brief explanation].<br><br>\n2. <b>Top Contact Drivers:</b><br><ul><li>[Reason 1]</li></ul><br>\n3. <b>Operational Bottlenecks Detected:</b><br><ul><li>[Issue 1]</li></ul><br>\n4. <b>Front Desk Performance (General):</b> [Brief feedback].<br><br>\n5. <b>Actionable Recommendations:</b><br><ul><li>[Rec 1]</li></ul>\n";
+        prompt = "Act as an Operations Director. Analyze this random sample of recent SMS traffic for: " + locationName + "\n\n" + paContext + "TRANSCRIPTS:\n" + conversationLog + "\nProvide EXACTLY this HTML structure. Do not use Markdown:\n1. <b>Patient Sentiment & Tone:</b> [Positive/Neutral/Negative] - [Brief explanation].<br><br>\n2. <b>Top Contact Drivers:</b><br><ul><li>[Reason 1]</li></ul><br>\n3. <b>Operational Bottlenecks Detected:</b><br><ul><li>[Issue 1]</li></ul><br>\n4. <b>Front Desk Performance (General):</b> [Brief feedback].<br><br>\n5. <b>Actionable Recommendations:</b><br><ul><li>[Rec 1]</li></ul>\n";
     } else if (reportMode === 'teams') {
-        prompt = "Act as a Team Performance Supervisor. Evaluate the communication style and effectiveness of this specific team.\n\nTRANSCRIPTS:\n" + conversationLog + "\nProvide EXACTLY this HTML structure. Do not use Markdown:\n1. <b>Team Synergy & Standardization:</b> [Analysis of whether all members follow similar protocols].<br><br>\n2. <b>Member Spotlights:</b><br><ul><li><b>Top Communicator:</b> [Name] - [Why]</li><li><b>Needs Coaching:</b> [Name] - [Why]</li></ul><br>\n3. <b>Common Mistakes / Areas to Improve:</b><br><ul><li>[Mistake 1]</li></ul><br>\n4. <b>Action Plan for Next Team Meeting:</b><br><ul><li>[Topic 1 to discuss]</li></ul>\n";
+        prompt = "Act as a Team Performance Supervisor. Evaluate the communication style and effectiveness of this specific team.\n\n" + paContext + "TRANSCRIPTS:\n" + conversationLog + "\nProvide EXACTLY this HTML structure. Do not use Markdown:\n1. <b>Team Synergy & Standardization:</b> [Analysis of whether all members follow similar protocols].<br><br>\n2. <b>Member Spotlights:</b><br><ul><li><b>Top Communicator:</b> [Name] - [Why]</li><li><b>Needs Coaching:</b> [Name] - [Why]</li></ul><br>\n3. <b>Common Mistakes / Areas to Improve:</b><br><ul><li>[Mistake 1]</li></ul><br>\n4. <b>Action Plan for Next Team Meeting:</b><br><ul><li>[Topic 1 to discuss]</li></ul>\n";
+        
+        // Agregar pregunta específica de PA para el equipo
+        if (hasPA) {
+            prompt += "5. <b>PA Quality & Alerts:</b><br><ul><li>[Analyze PA volume, uncontacted patients, and OVERDUE cases. Remind the team to work on overdue cases and update the tracker.]</li></ul>\n";
+        }
     }
 
     const apiKey = GEMINI_API_KEY.trim();
@@ -852,39 +907,44 @@ function getCallLogMetrics(employeeName) {
 }
 
 // --- NUEVO MÓDULO: GUARDADO DE PDF EN DRIVE (POR MES/AÑO) ---
-// --- NUEVO MÓDULO: GUARDADO DE PDF EN DRIVE (POR MES/AÑO) ---
-function createPdfInDrive(htmlContent, fileName, targetDateStr) {
+function createPdfInDrive(htmlContent, fileName, targetDateStr, teamName) {
   try {
-    // 1. Convertir el HTML a un documento PDF
+    // 1. Decidir qué carpeta padre usar
+    var isPA = teamName && (teamName.toLowerCase().includes('pa') || teamName.toLowerCase().includes('prior auth'));
+    var parentFolderId = isPA ? PA_REPORTS_PARENT_FOLDER_ID : REPORTS_PARENT_FOLDER_ID;
+    
+    if (!parentFolderId) {
+      throw new Error("Parent Folder ID for " + (isPA ? "PA" : "VA") + " is not configured.");
+    }
+
+    // 2. Convertir el HTML a un documento PDF
     var blob = Utilities.newBlob(htmlContent, MimeType.HTML).getAs(MimeType.PDF);
     blob.setName(fileName);
     
-    // 2. Extraer Mes y Año de la fecha final (Ej: "2026-04-10" -> "April 2026")
+    // 3. Extraer Mes y Año para la subcarpeta (Ej: "May 2026")
     var monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-    var dateParts = targetDateStr.split("-"); // [YYYY, MM, DD]
+    var dateParts = targetDateStr.split("-");
     var year = dateParts[0];
-    var monthIndex = parseInt(dateParts[1], 10) - 1; // Convertir "04" a índice 3 (April)
+    var monthIndex = parseInt(dateParts[1], 10) - 1;
     var folderMonthYear = monthNames[monthIndex] + " " + year; 
     
-    // 3. Conectar a la carpeta padre
-    var parentFolder = DriveApp.getFolderById(REPORTS_PARENT_FOLDER_ID);
+    // 4. Conectar a la carpeta padre correspondiente
+    var parentFolder = DriveApp.getFolderById(parentFolderId);
     
-    // 4. Buscar si la subcarpeta "April 2026" ya existe, si no, crearla
+    // 5. Buscar o crear la subcarpeta del mes
     var subFolders = parentFolder.getFoldersByName(folderMonthYear);
     var targetFolder;
-    
     if (subFolders.hasNext()) {
       targetFolder = subFolders.next();
     } else {
       targetFolder = parentFolder.createFolder(folderMonthYear);
     }
     
-    // 5. Guardar el archivo en la subcarpeta correcta
+    // 6. Guardar el archivo
     var file = targetFolder.createFile(blob);
-    
     return file.getUrl();
     
   } catch (e) {
-    throw new Error("Failed to create PDF in Drive: " + e.message);
+    throw new Error("Error saving PDF to Drive: " + e.message);
   }
 }
