@@ -231,7 +231,7 @@ function processUserFilters(form) {
       // ---------------------------------------------
 
       // 2. INACTIVITY GAPS: Solo calcular si el equipo incluye "VA"
-      var isVATeam = finalTeam && finalTeam.toUpperCase().indexOf("VA") !== -1;
+      var isVATeam = finalTeam && finalTeam.toLowerCase().includes("virtual assistants");
       if (channel === 'both' && isVATeam) {
         gaps = calculateGaps(interactionsTimeline, finalSchedule, form);
       }

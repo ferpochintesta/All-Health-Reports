@@ -555,7 +555,7 @@
         }
 
         // --- 6. INACTIVITY GAPS (SOLO EQUIPO VA) ---
-        if (isEmployee && data.channel === 'both' && data.employeeTeam && data.employeeTeam.toUpperCase().includes('VA')) {
+        if (isEmployee && data.channel === 'both' && data.employeeTeam && data.employeeTeam.toLowerCase().includes('virtual assistants')) {
           html += `<div class='report-card' style='border-color: #e74c3c;'><h4 class='section-title title-gaps' style='margin-top:0;'>⚠️ Inactivity Gaps</h4>`;
           if (data.gaps && data.gaps.length > 0) {
             data.gaps.forEach(dayObj => { html += `<div class='day-group'><div class='day-header'>📅 ${dayObj.date}</div>`; dayObj.items.forEach(gap => html += `<div class='gap-item'>🕒 ${gap.startStr} to ${gap.endStr} <strong>(${gap.durationStr})</strong></div>`); html += `</div>`; });
