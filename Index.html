@@ -724,6 +724,9 @@
         
         // Guardamos el formulario original para restaurarlo al final
         const form = document.getElementById('filterForm');
+        
+        const selectedTeamText = form.teamFilter.value;
+        
         originalTeamFormPayload = {
           reportMode: form.reportMode.value, teamFilter: form.teamFilter.value, locationFilter: form.locationFilter.value,
           employeeEmail: form.employeeEmail.value, startDate: data.startDate, endDate: data.endDate,
@@ -735,17 +738,12 @@
 
         // 1. Guardar primero el reporte del equipo actual
         const htmlString = getPrintableHtmlString();
-        const cleanTeamName = (data.teamFilter || "Team").replace(/[^a-zA-Z0-9\s]/g, "").trim().replace(/\s+/g, "_");
-        const teamFileName = `Performance_Team_Report_${cleanTeamName}_${data.startDate}_to_${data.endDate}.pdf`;
 
-        const actualTeamName = data.employeeTeam || data.teamFilter || "Team"; 
-        const cleanTeamName = actualTeamName.replace(/[^a-zA-Z0-9\s]/g, "").trim().replace(/\s+/g, "_");
+        const cleanTeamName = selectedTeamText.replace(/[^a-zA-Z0-9\s]/g, "").trim().replace(/\s+/g, "_");
         const teamFileName = `Performance_Team_Report_${cleanTeamName}_${data.startDate}_to_${data.endDate}.pdf`;
-
-        // CORRECCIÓN: Pasamos el nombre real detectado
-        const teamNameForDrive = actualTeamName;
 
         btn.innerHTML = "⏳ Saving Team Summary...";
+
         google.script.run
           .withSuccessHandler(() => {
               // 2. Éxito al guardar el equipo, iniciamos la cola individual
@@ -755,7 +753,7 @@
           .withFailureHandler((err) => {
               alert("Failed to save Team Report: " + err.message);
               btn.innerHTML = "👥 Generate Individual Reports"; btn.disabled = false;
-          }).createPdfInDrive(htmlString, teamFileName, data.endDate, teamNameForDrive); // <- NUEVO: Se agregó 'teamNameForDrive'
+          }).createPdfInDrive(htmlString, teamFileName, data.endDate, selectedTeamText); // <- NUEVO: Se agregó 'teamNameForDrive'
       }
 
       function processNextTeamMember() {
