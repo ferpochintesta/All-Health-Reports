@@ -21,7 +21,7 @@ function inicializarPropiedadesSeguras() {
 }
 */
 
-const PA_TEAM_MEMBERS = ["Krizza", "Mark", "Giovanni", "Roan", "Anthoney", "Czarina"];
+const PA_TEAM_MEMBERS = ["Mark", "Giovanni", "Roan", "Anthoney", "Czarina"];
 
 /**
  * Función principal llamada desde Code.gs para evaluar e inyectar métricas de PA

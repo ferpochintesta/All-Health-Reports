@@ -481,6 +481,34 @@ function compileInsights(m) { var p="Morning (6 AM - 12 PM)", mh=m.hours.morning
 
 function calculateGaps(tl, schedule, form) {
   if (tl.length === 0) return [];
+
+  // ========================================================
+  // ⚙️ CONFIGURATION OF MEETINGS EXEMPT FROM INACTIVITY
+  // day: 0=Domingo, 1=Lunes, 2=Martes, 3=Miércoles, 4=Jueves, 5=Viernes, 6=Sábado
+  // start / end: Formato 24h (ej. 14.0 = 2:00 PM, 14.5 = 2:30 PM, 8.5 = 8:30 AM)
+  // ========================================================
+  var EXEMPT_MEETINGS = [
+    { day: 3, start: 14.0, end: 15.0 }, // Wednesday from 2:00 PM to 3:00 PM
+    
+    // You can add more separated by commas. For example, one at 8:30 AM:
+    // { day: 3, start: 8.5, end: 9.5 } 
+  ];
+
+  // Internal function to intelligently cut down downtime (lunch or meetings)
+  function removeTimeRange(blocks, startMs, endMs) {
+    var result = [];
+    for (var i = 0; i < blocks.length; i++) {
+      var blk = blocks[i];
+      if (endMs <= blk.start || startMs >= blk.end) {
+        result.push(blk); // No se superponen, queda intacto
+      } else {
+        if (blk.start < startMs) result.push({ start: blk.start, end: startMs });
+        if (blk.end > endMs) result.push({ start: endMs, end: blk.end });
+      }
+    }
+    return result;
+  }
+
   var d = {};
   tl.forEach(function(ix) {
     var dt = new Date(ix.start);
@@ -520,51 +548,57 @@ function calculateGaps(tl, schedule, form) {
     var dgf = [];
     var minGapThreshold = isWeekend ? 120 : 30; // 2 horas finde, 30 mins semana
 
-    // --- NUEVO MOTOR: BLOQUES ACTIVOS ESTRICTOS ---
-    var activeBlocks = [];
+    // --- NUEVO MOTOR: BLOQUES ACTIVOS DINÁMICOS ---
+    // Empezamos asumiendo que el empleado está activo todo el turno
+    var activeBlocks = [ { start: b.start, end: b.end } ];
     
-    // Si hay almuerzo, partimos el turno en dos bloques
+    // 1. Recortar el Almuerzo (Lunch) del bloque activo
     if (lh !== undefined && lh !== null && lh !== "") {
-      var lhf = parseFloat(lh); // Acepta decimales (ej. 18.66 para 6:40 PM)
+      var lhf = parseFloat(lh); 
       var lunchStartDt = new Date(sd);
-      // Calculamos la hora exacta y el minuto exacto
       lunchStartDt.setHours(Math.floor(lhf), Math.round((lhf - Math.floor(lhf)) * 60), 0, 0);
       var lunchStartMs = lunchStartDt.getTime();
-      var lunchEndMs = lunchStartMs + 3600000; // El almuerzo termina EXACTAMENTE 1 hora después (60 * 60 * 1000)
-
-      activeBlocks.push({ start: b.start, end: lunchStartMs }); // Bloque 1: Ingreso a Inicio de Almuerzo
-      activeBlocks.push({ start: lunchEndMs, end: b.end });     // Bloque 2: Fin de Almuerzo a Salida
-    } else {
-      // Si no hay almuerzo, es un solo bloque de corrido
-      activeBlocks.push({ start: b.start, end: b.end });
+      var lunchEndMs = lunchStartMs + 3600000; // Almuerzo dura exactamente 1 hora
+      activeBlocks = removeTimeRange(activeBlocks, lunchStartMs, lunchEndMs);
     }
 
-    // Evaluamos los gaps bloque por bloque
+    // 2. Recortar las Reuniones (Exempt Meetings) del bloque activo
+    for (var mIdx = 0; mIdx < EXEMPT_MEETINGS.length; mIdx++) {
+      var meeting = EXEMPT_MEETINGS[mIdx];
+      if (meeting.day === dayOfWeek) { 
+        var meetStartDt = new Date(sd);
+        meetStartDt.setHours(Math.floor(meeting.start), Math.round((meeting.start - Math.floor(meeting.start)) * 60), 0, 0);
+        var meetEndDt = new Date(sd);
+        meetEndDt.setHours(Math.floor(meeting.end), Math.round((meeting.end - Math.floor(meeting.end)) * 60), 0, 0);
+        
+        // Extraemos este rango de tiempo para que no genere inactividad
+        activeBlocks = removeTimeRange(activeBlocks, meetStartDt.getTime(), meetEndDt.getTime());
+      }
+    }
+
+    // Evaluamos los gaps reales bloque por bloque
     for (var bIdx = 0; bIdx < activeBlocks.length; bIdx++) {
       var block = activeBlocks[bIdx];
       var cl = block.start; // Reloj actual
 
       for (var j = 0; j < m.length; j++) {
-        var mg = m[j]; // Intervalo de actividad
+        var mg = m[j]; 
         
-        if (mg.end <= cl) continue; // Actividad en el pasado, ignorar
-        if (mg.start >= block.end) break; // Actividad fuera de este bloque, pasar al siguiente
+        if (mg.end <= cl) continue; 
+        if (mg.start >= block.end) break; 
 
-        // Si hay espacio entre nuestro reloj actual y la próxima actividad
         if (mg.start > cl) {
           var gapStart = cl;
-          var gapEnd = Math.min(mg.start, block.end); // El gap topa contra el límite del bloque si es necesario
+          var gapEnd = Math.min(mg.start, block.end); 
           var dm = Math.floor((gapEnd - gapStart) / 60000);
           
           if (dm >= minGapThreshold) {
             dgf.push(formatGapObj(gapStart, gapEnd, dm, ""));
           }
         }
-        // Avanzar el reloj
         cl = Math.max(cl, Math.min(mg.end, block.end));
       }
 
-      // Verificamos si quedó un gap al final del bloque (Ej: si se fue temprano antes del almuerzo o antes de salir)
       if (block.end > cl) {
         var dm = Math.floor((block.end - cl) / 60000);
         if (dm >= minGapThreshold) {
