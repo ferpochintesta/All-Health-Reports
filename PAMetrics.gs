@@ -90,7 +90,7 @@ function processPAData(selection, startDateStr, endDateStr, PA_SPREADSHEET_ID, E
   const overdueThresholdStr = Utilities.formatDate(todayDate, Session.getScriptTimeZone(), "yyyy-MM-dd");
 
   targetMembers.forEach(member => {
-    let sheetToProcess = null;
+    let sheetsToProcess = []; // AHORA ES UN ARRAY PARA SOPORTAR MÚLTIPLES PESTAÑAS
     let isException = EXCEPTIONS.find(e => e.name === member);
     let currentSpreadsheet = mainSpreadsheet; 
 
@@ -99,28 +99,41 @@ function processPAData(selection, startDateStr, endDateStr, PA_SPREADSHEET_ID, E
         const extSs = SpreadsheetApp.openById(isException.spreadsheetId);
         currentSpreadsheet = extSs;
         const extSheets = extSs.getSheets();
-        for (let i = 0; i < extSheets.length; i++) {
-          if (extSheets[i].getName().toLowerCase().includes(member.toLowerCase())) {
-            sheetToProcess = extSheets[i];
-            break;
+        
+        // NUEVA LÓGICA: Si definiste pestañas específicas para esta excepción
+        if (isException.sheetNames && isException.sheetNames.length > 0) {
+          for (let i = 0; i < extSheets.length; i++) {
+            if (isException.sheetNames.includes(extSheets[i].getName())) {
+              sheetsToProcess.push(extSheets[i]);
+            }
           }
+        } else {
+          // Lógica original (por si hay otras excepciones que solo usan una pestaña)
+          for (let i = 0; i < extSheets.length; i++) {
+            if (extSheets[i].getName().toLowerCase().includes(member.toLowerCase())) {
+              sheetsToProcess.push(extSheets[i]);
+              break;
+            }
+          }
+          if (sheetsToProcess.length === 0) sheetsToProcess.push(extSheets[0]);
         }
-        if (!sheetToProcess) sheetToProcess = extSheets[0];
       } catch (e) {
         Logger.log("Error con excepción: " + member);
       }
     } else {
+      // Lógica para miembros normales del mainSpreadsheet
       const sheets = mainSpreadsheet.getSheets();
       for (let i = 0; i < sheets.length; i++) {
         if (sheets[i].getName().toLowerCase().includes(member.toLowerCase())) {
-          sheetToProcess = sheets[i];
+          sheetsToProcess.push(sheets[i]);
           break;
         }
       }
     }
 
-    if (sheetToProcess) {
-      const sheetTz = currentSpreadsheet.getSpreadsheetTimeZone(); 
+    // AHORA ITERAMOS SOBRE TODAS LAS PESTAÑAS ENCONTRADAS PARA ESTE MIEMBRO
+    sheetsToProcess.forEach(sheetToProcess => {
+      const sheetTz = currentSpreadsheet.getSpreadsheetTimeZone();
       const data = sheetToProcess.getDataRange().getValues();
       
       if (data.length > 1) {
@@ -175,7 +188,6 @@ function processPAData(selection, startDateStr, endDateStr, PA_SPREADSHEET_ID, E
           // Métricas normales (volumen diario, etc.)
           if (rowDateStr >= startDateStr && rowDateStr <= endDateStr) {
             if (patName || chartNum) patientsThisPeriod.push({ chart: chartNum, name: patName });
-
             allRows.push({
               member: member, status: statusRaw, date: rowDateStr,
               medication: medIdx !== -1 ? row[medIdx] : "Unknown",
@@ -184,7 +196,7 @@ function processPAData(selection, startDateStr, endDateStr, PA_SPREADSHEET_ID, E
           }
         }
       }
-    }
+    }); // Fin del forEach de sheetsToProcess
   });
 
   // --- FILTRADO FINAL DE ATRASADOS (OVERDUE) ---
