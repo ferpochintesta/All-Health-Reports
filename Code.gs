@@ -12,9 +12,11 @@ const REPORTS_PARENT_FOLDER_ID = scriptProps.getProperty('REPORTS_PARENT_FOLDER_
 const PA_REPORTS_PARENT_FOLDER_ID = scriptProps.getProperty('PA_REPORTS_PARENT_FOLDER_ID');
 
 const AUTHORIZED_MANAGERS = [
-  "genesiscastillo@allhealthmedgroup.com", 
+  "genesiscastillo@allhealthmedgroup.com",
+  "williamortiz@allhealthmedgroup.com",
   "fernandopochintesta@allhealthmedgroup.com",
-  "linatascon@allhealthmedgroup.com"
+  "linatascon@allhealthmedgroup.com",
+  "mariacastro@allhealthmedgroup.com"
 ];
 
 function doGet() {
