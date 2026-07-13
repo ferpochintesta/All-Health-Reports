@@ -131,7 +131,7 @@
         </div>
 
         <div class="form-group">
-          <label for="dateRange">Report Period (Max 31 days)</label>
+          <label for="dateRange">Report Period</label>
           <input type="text" id="dateRange" name="dateRange" placeholder="Select Start and End dates..." required style="background-color: #fff; cursor: pointer;">
         </div>
 
@@ -218,17 +218,17 @@
             dateFormat: "Y-m-d",
             defaultDate: [lastMonday, lastSunday], // Se auto-llena con el mes pasado
             maxDate: "today", // Opcional: Evita que seleccionen fechas del futuro
-            onChange: function(selectedDates, dateStr, instance) {
-                // Validación en tiempo real: Si eligen más de 31 días, les avisa y borra
-                if (selectedDates.length === 2) {
-                    const diffTime = Math.abs(selectedDates[1] - selectedDates[0]);
-                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                    if (diffDays > 31) {
-                        alert("For performance reasons, the date range cannot exceed 31 days.");
-                        instance.clear();
-                    }
-                }
-            }
+            // Validación en tiempo real: Si eligen más de 31 días, les avisa y borra
+            // onChange: function(selectedDates, dateStr, instance) {
+            //    if (selectedDates.length === 2) {
+            //        const diffTime = Math.abs(selectedDates[1] - selectedDates[0]);
+            //        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            //        if (diffDays > 31) {
+            //            alert("For performance reasons, the date range cannot exceed 31 days.");
+            //            instance.clear();
+            //        }
+            //    }
+            //}
         });
       }
       initTimeSelects();
@@ -504,6 +504,47 @@
              html += `<p style='margin: 10px 0 5px 0; font-size: 14px; color: #8e44ad;'><strong>🏆 Top Team Members (Avg Patients/Day):</strong></p><ul>`;
              teamMembersArr.slice(0, 5).forEach(ag => html += `<li><strong>${ag.name}</strong>: ~${ag.avgDailyPatients} unique patients per day</li>`);
              html += `</ul>`;
+          }
+          if ((isGlobal || isTeam) && data.employeeAverages && data.employeeAverages.length > 0) {
+            const showSms = (data.channel === 'sms' || data.channel === 'both');
+            const showCalls = (data.channel === 'calls' || data.channel === 'both');
+
+            html += `<div class='report-card' style='border-color: #8e44ad; margin-bottom: 25px; page-break-inside: avoid;'>`;
+            html += `  <h4 class='section-title' style='color: #8e44ad; border-color: #8e44ad; margin-top: 0;'>📊 Daily Average per Employee</h4>`;
+            html += `  <table style='width: 100%; border-collapse: collapse; font-size: 13px; text-align: left;'>`;
+            html += `    <thead>`;
+            html += `      <tr style='background-color: #f4ecf7; border-bottom: 2px solid #8e44ad;'>`;
+            html += `        <th style='padding: 8px;'>Team</th>`;
+            html += `        <th style='padding: 8px;'>Employee</th>`;
+            html += `        <th style='padding: 8px;'>Records</th>`;
+            html += `        <th style='padding: 8px;'>Active Days</th>`;
+            if (showSms) html += `<th style='padding: 8px;'>Avg. SMS/Day</th>`;
+            if (showCalls) {
+              html += `<th style='padding: 8px;'>Avg. Outbound Calls/Day</th>`;
+              html += `<th style='padding: 8px;'>Avg. Inbound Calls/Day</th>`;
+            }
+            html += `      </tr>`;
+            html += `    </thead>`;
+            html += `    <tbody>`;
+            
+            data.employeeAverages.forEach((emp, index) => {
+              const bgColor = index % 2 === 0 ? '#ffffff' : '#faf5fc';
+              html += `      <tr style='background-color: ${bgColor}; border-bottom: 1px solid #eee;'>`;
+              html += `        <td style='padding: 8px;'>${emp.team}</td>`;
+              html += `        <td style='padding: 8px;'><strong>${emp.employee}</strong></td>`;
+              html += `        <td style='padding: 8px;'>${emp.totalRecords}</td>`;
+              html += `        <td style='padding: 8px;'>${emp.activeDays}</td>`;
+              if (showSms) html += `<td style='padding: 8px;'>${emp.avgSms !== null ? emp.avgSms : '-'}</td>`;
+              if (showCalls) {
+                html += `<td style='padding: 8px;'>${emp.avgCallsOut !== null ? emp.avgCallsOut : '-'}</td>`;
+                html += `<td style='padding: 8px;'>${emp.avgCallsIn !== null ? emp.avgCallsIn : '-'}</td>`;
+              }
+              html += `      </tr>`;
+            });
+            
+            html += `    </tbody>`;
+            html += `  </table>`;
+            html += `</div>`;
           }
         }
 

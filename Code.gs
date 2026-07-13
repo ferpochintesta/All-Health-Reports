@@ -19,6 +19,27 @@ const AUTHORIZED_MANAGERS = [
   "mariacastro@allhealthmedgroup.com"
 ];
 
+const EXCLUDED_AGENTS = [
+  "unknown agent", 
+  "fernandopochintesta@allhealthmedgroup.com", 
+  "emmanueltorres@allhealthmedgroup.com",
+  "philipgaylan@allhealthmedgroup.com",
+  "lindadavt@allhealthmedgroup.com",
+  "nayeli@allhealthmedgroup.com",
+  "kimberlyrivera@allhealthmedgroup.com",
+  "suhelahmed@allhealthmedgroup.com",
+  "genesiscastillo@allhealthmedgroup.com",
+  "christinaarmoreda@allhealthmedgroup.com",
+  "abubakralfaouri@allhealthmedgroup.com",
+  "michelledejesus@allhealthmedgroup.com",
+  "kimberlypullman@allhealthmedgroup.com",
+  "emalymatari@allhealthmedgroup.com",
+  "",
+  "",
+  "",
+
+];
+
 function doGet() {
   // Get the email of the person trying to open the web app
   var userEmail = Session.getActiveUser().getEmail().toLowerCase();
@@ -127,15 +148,21 @@ function processUserFilters(form) {
     }
   }
   
+  if (!form.startDate) return { status: "error", message: "Start date is required." };
+
   var startParts = form.startDate.split("-");
-  var endParts = form.endDate.split("-");
+  
+  // Si form.endDate no existe o está vacío, usamos form.startDate como fecha de fin
+  var effectiveEndDate = (form.endDate && form.endDate.trim() !== "") ? form.endDate : form.startDate;
+  var endParts = effectiveEndDate.split("-");
+
   var startDate = new Date(startParts[0], startParts[1] - 1, startParts[2], 0, 0, 0);
   var endDate = new Date(endParts[0], endParts[1] - 1, endParts[2], 23, 59, 59);
   var channel = form.channel;
   
-  var diffTime = Math.abs(endDate - startDate);
-  var diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
-  if (diffDays > 31) return { status: "error", message: "Date range cannot exceed 31 days." };
+  //var diffTime = Math.abs(endDate - startDate);
+  //var diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+  //if (diffDays > 31) return { status: "error", message: "Date range cannot exceed 31 days." };
 
   var metrics = {
     calls: { total: 0, inbound: 0, outbound: 0, duration: 0, daily: {}, dailyPatients: {} },
@@ -147,7 +174,9 @@ function processUserFilters(form) {
     busiestDay: { calls: [0,0,0,0,0,0,0], sms: [0,0,0,0,0,0,0], dayCounts: [0,0,0,0,0,0,0] },
     busiestHour: { calls: Array(24).fill(0), sms: Array(24).fill(0), dayCount: 0 },
     activeSpans: {},
-    contactedPatients: { ids: {}, names: {} }
+    contactedPatients: { ids: {}, names: {} },
+    agentDaily: {},
+    agentDisplay: {}
   };
 
   // Pre-calcular cuántos lunes, martes, etc., hay en el rango para sacar promedios exactos
@@ -253,7 +282,12 @@ function processUserFilters(form) {
       
   } else if (reportMode === 'global') {
       var topAgents = [];
-      for (var agent in metrics.agentVolume) topAgents.push({name: agent, count: metrics.agentVolume[agent]});
+      for (var agent in metrics.agentVolume) {
+        // Ignoramos los envíos automáticos / desconocidos
+        if (EXCLUDED_AGENTS.indexOf(agent.toLowerCase()) === -1) {
+          topAgents.push({name: agent, count: metrics.agentVolume[agent]});
+        }
+      }
       topAgents.sort(function(a,b) { return b.count - a.count; });
       insights.topAgents = topAgents;
   } else if (reportMode === 'teams') {
@@ -303,7 +337,10 @@ function processUserFilters(form) {
       calls: callsData, sms: smsData, callResults: metrics.callResults,
       busiestDay: metrics.busiestDay, busiestHour: metrics.busiestHour,
       insights: insights, topAgents: insights.topAgents || [], hoursData: metrics.hours, gaps: gaps, attendance: attendance,
-      paDashboardData: paDashboardData
+      paDashboardData: paDashboardData,
+      hoursData: metrics.hours, gaps: gaps, attendance: attendance,
+      paDashboardData: paDashboardData,
+      employeeAverages: (reportMode === 'global' || reportMode === 'teams') ? buildEmployeeAverages(metrics, channel) : null
     }
   };
 }
@@ -378,7 +415,12 @@ function processFolder(folderId, prefix, months, startDt, endDt, reportMode, ema
               var dayOfWeek = rowDate.getDay();
               var hour = rowDate.getHours();
 
-              // Track Active Span (Horas Activas Reales)
+              var agentKey = rowUser.trim().toLowerCase();
+              if (!metrics.agentDaily[agentKey]) {
+                metrics.agentDaily[agentKey] = { sms: {}, callsOut: {}, callsIn: {} };
+                metrics.agentDisplay[agentKey] = rowUser;
+              }
+
               if (reportMode === 'employee') {
                   metrics.matchedEmails[rowUser] = true; 
                   metrics.activeSpans[dayKey] = metrics.activeSpans[dayKey] || { min: startMs, max: startMs };
@@ -406,6 +448,7 @@ function processFolder(folderId, prefix, months, startDt, endDt, reportMode, ema
                 var cType = cTypeIdx > -1 && row[cTypeIdx] ? row[cTypeIdx].trim().toLowerCase() : "";
                 if (cType === 'inbound') {
                     metrics.calls.inbound++;
+                    metrics.agentDaily[agentKey].callsIn[dayKey] = (metrics.agentDaily[agentKey].callsIn[dayKey] || 0) + 1;
                     metrics.busiestDay.calls[dayOfWeek]++;
                     metrics.busiestHour.calls[hour]++;
                     
@@ -415,7 +458,10 @@ function processFolder(folderId, prefix, months, startDt, endDt, reportMode, ema
                     else if (resultText.indexOf('abandoned') > -1) metrics.callResults.abandoned++;
                     else metrics.callResults.other++;
                 }
-                if (cType === 'outbound') metrics.calls.outbound++;
+                if (cType === 'outbound') {
+                    metrics.calls.outbound++;
+                    metrics.agentDaily[agentKey].callsOut[dayKey] = (metrics.agentDaily[agentKey].callsOut[dayKey] || 0) + 1;
+                }
                 
                 if (reportMode === 'teams' && matchedTeamId) {
                   metrics.teamStats[matchedTeamId].calls++;
@@ -426,6 +472,7 @@ function processFolder(folderId, prefix, months, startDt, endDt, reportMode, ema
               } else {
                 metrics.sms.total++;
                 metrics.sms.daily[dayKey] = (metrics.sms.daily[dayKey] || 0) + 1;
+                metrics.agentDaily[agentKey].sms[dayKey] = (metrics.agentDaily[agentKey].sms[dayKey] || 0) + 1;
                 var sType = (smsTypeIdx > -1 && row[smsTypeIdx]) ? row[smsTypeIdx].trim().toLowerCase() : "";
                 if (sType === 'inbound') {
                     metrics.busiestDay.sms[dayOfWeek]++;
@@ -983,4 +1030,140 @@ function createPdfInDrive(htmlContent, fileName, targetDateStr, teamName) {
   } catch (e) {
     throw new Error("Error saving PDF to Drive: " + e.message);
   }
+}
+
+function findEmployeeByFuzzyName(key) {
+  if (!key) return null;
+  var teamsDb = getTeamsFromSheet();
+  if (!teamsDb || teamsDb.status !== "success" || !teamsDb.data) return null;
+  
+  var searchKey = key.toLowerCase();
+  for (var teamName in teamsDb.data) {
+    var members = teamsDb.data[teamName];
+    for (var i = 0; i < members.length; i++) {
+      var member = members[i];
+      var memberName = (member.name || "").toLowerCase();
+      if (memberName && (searchKey.indexOf(memberName) !== -1 || memberName.indexOf(searchKey) !== -1)) {
+        return {
+          team: teamName,
+          name: member.name,
+          matchedEmail: member.id
+        };
+      }
+    }
+  }
+  return null;
+}
+
+function resolveAgentProfile(agentKey, displayFallback) {
+  var profile = null;
+  
+  if (agentKey && agentKey.indexOf("@") !== -1) {
+    profile = getEmployeeProfile(agentKey);
+  }
+  
+  if (!profile) {
+    var fuzzy = findEmployeeByFuzzyName(agentKey);
+    if (fuzzy) {
+      profile = getEmployeeProfile(fuzzy.matchedEmail);
+      if (!profile) {
+        profile = {
+          team: fuzzy.team,
+          name: fuzzy.name
+        };
+      }
+    }
+  }
+  
+  return {
+    team: (profile && profile.team) ? profile.team : "Unassigned",
+    name: (profile && profile.name) ? profile.name : displayFallback
+  };
+}
+
+function buildEmployeeAverages(metrics, channel) {
+  var result = [];
+  if (!metrics || !metrics.agentDaily) return result;
+  
+  var includeSms = (channel === 'sms' || channel === 'both');
+  var includeCalls = (channel === 'calls' || channel === 'both');
+  
+  for (var clave in metrics.agentDaily) {
+    if (EXCLUDED_AGENTS.indexOf(clave.toLowerCase()) !== -1) continue;
+
+    var agentData = metrics.agentDaily[clave];
+    var daysMap = {};
+    
+    if (includeSms && agentData.sms) {
+      for (var day in agentData.sms) {
+        daysMap[day] = true;
+      }
+    }
+    
+    if (includeCalls) {
+      if (agentData.callsOut) {
+        for (var day in agentData.callsOut) {
+          daysMap[day] = true;
+        }
+      }
+      if (agentData.callsIn) {
+        for (var day in agentData.callsIn) {
+          daysMap[day] = true;
+        }
+      }
+    }
+    
+    var activeDays = Object.keys(daysMap).length;
+    if (activeDays === 0) continue;
+    
+    var totalSms = 0;
+    if (agentData.sms) {
+      for (var day in agentData.sms) {
+        totalSms += agentData.sms[day] || 0;
+      }
+    }
+    
+    var totalCallsOut = 0;
+    if (agentData.callsOut) {
+      for (var day in agentData.callsOut) {
+        totalCallsOut += agentData.callsOut[day] || 0;
+      }
+    }
+    
+    var totalCallsIn = 0;
+    if (agentData.callsIn) {
+      for (var day in agentData.callsIn) {
+        totalCallsIn += agentData.callsIn[day] || 0;
+      }
+    }
+    
+    var totalRecords = totalSms + totalCallsOut + totalCallsIn;
+    
+    var displayFallback = (metrics.agentDisplay && metrics.agentDisplay[clave]) ? metrics.agentDisplay[clave] : clave;
+    var profile = resolveAgentProfile(clave, displayFallback);
+    
+    var avgSms = includeSms ? Math.round((totalSms / activeDays) * 10) / 10 : null;
+    var avgCallsOut = includeCalls ? Math.round((totalCallsOut / activeDays) * 10) / 10 : null;
+    var avgCallsIn = includeCalls ? Math.round((totalCallsIn / activeDays) * 10) / 10 : null;
+    
+    result.push({
+      team: profile.team,
+      employee: profile.name,
+      totalRecords: totalRecords,
+      activeDays: activeDays,
+      avgSms: avgSms,
+      avgCallsOut: avgCallsOut,
+      avgCallsIn: avgCallsIn
+    });
+  }
+  
+  result.sort(function(a, b) {
+    // Si avgSms es null (porque consultaron solo llamadas), lo tratamos como 0 para no romper el orden
+    var valA = a.avgSms || 0;
+    var valB = b.avgSms || 0;
+    
+    return valB - valA;
+  });
+  
+  return result;
 }
