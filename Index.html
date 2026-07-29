@@ -286,13 +286,15 @@
 
         // EXTRACCIÓN Y CORTE DEL NUEVO CALENDARIO
         const dateRangeVal = document.getElementById('dateRange').value;
-        const dates = dateRangeVal.split(" to ");
-        if (dates.length !== 2) { 
-            alert("Please select a complete date range (Start and End date)."); 
-            return; 
+        if (!dateRangeVal || dateRangeVal.trim() === "") {
+            alert("Please select a date.");
+            return;
         }
+        
+        const dates = dateRangeVal.split(" to ");
         const finalStartDate = dates[0];
-        const finalEndDate = dates[1];
+        // Si hay una segunda fecha, la usa. Si no, repite la primera.
+        const finalEndDate = dates.length === 2 ? dates[1] : dates[0];
 
         const resultDiv = document.getElementById('result');
         ['btnStandard', 'btnCharts', 'btnAI'].forEach(id => document.getElementById(id).disabled = true);
