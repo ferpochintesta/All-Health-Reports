@@ -479,6 +479,21 @@
           } else { html += `<p style='color: #999; font-style: italic; font-size: 14px;'>No call activity found.</p>`; }
         }
 
+        // --- NUEVO: REGISTRO DE DISPOSITIVO (EXTENSIONS) ---
+      if (data.reportMode === 'employee' && data.deviceExtensionLog && data.deviceExtensionLog.length > 0) {
+        html += `<div style='background: white; padding: 15px; border-radius: 6px; border: 1px solid #e1e8ed; margin-top: 15px; margin-bottom: 15px;'>`;
+        html += `<h4 class='section-title' style='color: #16a085; border-color: #16a085; margin-top:0;'>📟 Device (Extension)</h4>`;
+        html += `<ul style='font-size: 13px; margin: 0; padding-left: 20px;'>`;
+        data.deviceExtensionLog.forEach(entry => {
+          if (entry.found) {
+            html += `<li>${entry.day} — ${entry.office} — ${entry.role}</li>`;
+          } else {
+            html += `<li style='color: #e74c3c; font-weight: 500;'>${entry.day} — ⚠️ No registered device record was found for this employee.</li>`;
+          }
+        });
+        html += `</ul></div>`;
+      }
+
         if (data.channel === 'sms' || data.channel === 'both') {
           html += `<h4 class='section-title title-sms'>💬 Text Messaging (SMS)</h4>`;
           if (data.sms.total > 0) {
