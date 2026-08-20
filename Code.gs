@@ -295,17 +295,10 @@ function processUserFilters(form) {
           totalHours += Math.max(1, span); // Mínimo 1 hora para no inflar métricas
       }
       insights.pace = totalHours > 0 ? Math.round((metrics.calls.total + metrics.sms.total) / totalHours) : 0;
-
-      // Calcular "Pace" (Ritmo de trabajo) para Empleado
-      var totalHours = 0;
-      for (var d in metrics.activeSpans) {
-          var span = (metrics.activeSpans[d].max - metrics.activeSpans[d].min) / 3600000;
-          totalHours += Math.max(1, span); 
-      }
-      insights.pace = totalHours > 0 ? Math.round((metrics.calls.total + metrics.sms.total) / totalHours) : 0;
       
       // NUEVO: Generar el log detallado de Extensions (Solo para empleado y si no es estático)
-      var logLookup = buildDeviceLookup(officialEmployeeEmail, finalName, startDate, endDate);
+      // OPTIMIZACIÓN: Si existe en metrics (de las llamadas), lo reusamos. Si no, lo consultamos.
+      var logLookup = metrics.savedDeviceLookup || buildDeviceLookup(officialEmployeeEmail, finalName, startDate, endDate);
       if (logLookup.mode === 'byDate' || logLookup.mode === 'none') {
          deviceExtensionLog = [];
          var logCurr = new Date(startDate);
@@ -575,11 +568,13 @@ function processCallsFolderV2(folderId, prefix, months, startDt, endDt, reportMo
   
   if (reportMode === 'employee') {
     deviceLookup = buildDeviceLookup(email, email, startDt, endDt);
+    metrics.savedDeviceLookup = deviceLookup; // OPTIMIZACIÓN: Guardamos en metrics
   } else if (reportMode === 'teams') {
     deviceLookup = {};
     for (var j = 0; j < teamMembers.length; j++) {
       deviceLookup[teamMembers[j].id] = buildDeviceLookup(teamMembers[j].id, teamMembers[j].name, startDt, endDt);
     }
+    metrics.savedDeviceLookup = deviceLookup; // OPTIMIZACIÓN: Guardamos en metrics
   }
 
   var folder = DriveApp.getFolderById(folderId);
@@ -1198,9 +1193,11 @@ function buildDeviceLookup(employeeId, employeeName, startDate, endDate) {
     return { mode: 'static', device: profile.deviceName };
   }
   
-  var byDate = lookupExtensionDevicesInRange(employeeName, startDate, endDate);
+  // Preferimos el nombre real de la hoja Data si el perfil existe (aunque no tenga device fijo).
+  var searchName = (profile && profile.name) ? profile.name : employeeName;
+  var byDate = lookupExtensionDevicesInRange(searchName, startDate, endDate);
   if (byDate && Object.keys(byDate).length > 0) {
-    return { mode: 'byDate', map: byDate }; // map ahora guarda los objetos completos
+    return { mode: 'byDate', map: byDate };
   }
   
   return { mode: 'none' };
