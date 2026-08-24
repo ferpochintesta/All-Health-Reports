@@ -26,7 +26,7 @@ const EXCLUDED_AGENTS = [
   "unknown agent", 
   "fernandopochintesta@allhealthmedgroup.com", 
   "emmanueltorres@allhealthmedgroup.com",
-  "philipgaylan@allhealthmedgroup.com",
+  "phillipgaylan@allhealthmedgroup.com",
   "lindadavt@allhealthmedgroup.com",
   "nayeli@allhealthmedgroup.com",
   "kimberlyrivera@allhealthmedgroup.com",
@@ -72,15 +72,15 @@ function getTeamsFromSheet() {
   try {
     if (!SPREADSHEET_ID) return { status: "error", message: "SPREADSHEET_ID is missing" };
     
-    var sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName('Data');
-    var data = sheet.getDataRange().getValues();
-    if (data.length < 2) return { status: "error", message: "Sheet is empty." };
+    // OPTIMIZATION: Use the Persistent Cache instead of calling SpreadsheetApp directly
+    var data = getSheetDataCached('Data');
+    if (!data || data.length < 2) return { status: "error", message: "Sheet is empty or missing." };
 
     var headers = data[0].map(function(h) { return h.toString().toLowerCase().trim(); });
     var teamIdx = headers.indexOf("team");
     var idIdx = headers.indexOf("id");
     var nameIdx = headers.indexOf("name");
-    var deviceIdx = headers.indexOf("device name"); // NUEVO: Extraer índice del Device Name
+    var deviceIdx = headers.indexOf("device name"); 
 
     if (teamIdx === -1 || idIdx === -1 || nameIdx === -1) {
         return { status: "error", message: "Missing columns" };
@@ -88,27 +88,51 @@ function getTeamsFromSheet() {
 
     var teamsMap = {};
     for (var i = 1; i < data.length; i++) {
-      var teamName = data[i][teamIdx] ? data[i][teamIdx].toString().trim() : "";
+      // FIX 1: Si la celda de Team está vacía, los asignamos a "Unassigned"
+      var teamName = data[i][teamIdx] ? data[i][teamIdx].toString().trim() : "Unassigned"; 
       var empId = data[i][idIdx] ? data[i][idIdx].toString().trim() : "";
       var empName = data[i][nameIdx] ? data[i][nameIdx].toString().trim() : "";
-      var deviceName = (deviceIdx !== -1 && data[i][deviceIdx]) ? data[i][deviceIdx].toString().trim() : null; // NUEVO
+      var deviceName = (deviceIdx !== -1 && data[i][deviceIdx]) ? data[i][deviceIdx].toString().trim() : null; 
       
-      if (teamName && empId) {
+      // FIX 2: Ya no exigimos que teamName exista para guardarlos en memoria
+      if (empId) { 
         if (!teamsMap[teamName]) teamsMap[teamName] = [];
         teamsMap[teamName].push({ 
             id: empId.toLowerCase(), 
             name: empName || empId,
-            deviceName: deviceName // NUEVO: Se guarda en el objeto del miembro
+            deviceName: deviceName 
         });
       }
     }
     
-    // Devolvemos el resultado directamente sin guardarlo en caché
     return { status: "success", data: teamsMap };
     
   } catch (e) { 
     return { status: "error", message: "Error reading Sheet: " + e.message }; 
   }
+}
+
+function isExcludedAgent(identifier) {
+  if (!identifier) return false;
+  var val = identifier.toLowerCase().trim();
+  
+  // 1. Check if it matches exactly first
+  if (EXCLUDED_AGENTS.indexOf(val) !== -1) return true;
+  
+  // 2. Cross-reference name to email via the Database
+  var teamsDbRes = getTeamsFromSheet();
+  if (teamsDbRes && teamsDbRes.status === "success" && teamsDbRes.data) {
+    var teamsDb = teamsDbRes.data;
+    for (var team in teamsDb) {
+      for (var i = 0; i < teamsDb[team].length; i++) {
+        var member = teamsDb[team][i];
+        if (member.name && member.name.toLowerCase().trim() === val) {
+          if (EXCLUDED_AGENTS.indexOf(member.id.toLowerCase().trim()) !== -1) return true;
+        }
+      }
+    }
+  }
+  return false;
 }
 
 function processUserFilters(form) {
@@ -228,20 +252,24 @@ function processUserFilters(form) {
 
   if (reportMode === 'employee') {
       var matchedArr = Object.keys(metrics.matchedEmails);
-      var officialEmployeeEmail = "";
-      if (matchedArr.length === 0) {
-        // Si no hay llamadas, no matamos el script. Usamos lo que escribió el usuario para buscar en PA.
-        officialEmployeeEmail = employee; 
-      } else if (matchedArr.length > 1) {
-        var errorHtml = "Multiple employees found. Please use one of these exact emails:<br><br><ul style='text-align:left; margin-top:5px;'>";
-        matchedArr.forEach(function(e) { errorHtml += "<li>" + e + "</li>"; });
-        return { status: "error", message: errorHtml + "</ul>" };
-      } else {
-        officialEmployeeEmail = matchedArr[0];
+      
+      // 1. Confiar en la Búsqueda Inteligente: usar el email oficial de la BD si se resolvió
+      var officialEmployeeEmail = employee; 
+      
+      // 2. Solo validamos duplicados si la búsqueda falló y no tenemos un correo oficial
+      if (officialEmployeeEmail.indexOf("@") === -1) {
+        if (matchedArr.length > 1) {
+          var errorHtml = "Multiple employees found in Weave. Please refine your search or use their exact HR email:<br><br><ul style='text-align:left; margin-top:5px;'>";
+          matchedArr.forEach(function(e) { errorHtml += "<li>" + e + "</li>"; });
+          return { status: "error", message: errorHtml + "</ul>" };
+        } else if (matchedArr.length === 1) {
+          officialEmployeeEmail = matchedArr[0]; // Si Weave solo encontró uno, asumimos que es ese
+        }
       }
       
       // 1. Buscamos el perfil en el Spreadsheet usando el correo oficial
       var employeeProfile = getEmployeeProfile(officialEmployeeEmail);
+
       // 2. Definimos variables seguras (si no está en el Excel, usa el correo/Default)
       var finalName = employeeProfile ? employeeProfile.name : officialEmployeeEmail;
       var finalTeam = employeeProfile ? employeeProfile.team : "General";
@@ -284,7 +312,18 @@ function processUserFilters(form) {
       }
 
       // 3. ASISTENCIA: Cruzamos llamadas, SMS y ahora también PA (paDaily)
-      if (channel === 'both' && (finalSchedule || form.useSchedule === 'true')) {
+      var hasValidScheduleDB = false;
+      if (finalSchedule) {
+        for (var day = 0; day <= 6; day++) {
+          if (finalSchedule[day] !== null) {
+             hasValidScheduleDB = true;
+             break;
+          }
+        }
+      }
+
+      // Solo lo evaluamos si tiene un horario real en el Excel, O si el gerente forzó el horario manual en la web
+      if (channel === 'both' && (hasValidScheduleDB || form.useSchedule === 'true')) {
         attendance = evaluateAttendance(startDate, endDate, finalSchedule, form, metrics.calls.daily, metrics.sms.daily, channel, paDaily);
       }
       
@@ -296,7 +335,7 @@ function processUserFilters(form) {
       }
       insights.pace = totalHours > 0 ? Math.round((metrics.calls.total + metrics.sms.total) / totalHours) : 0;
       
-      // NUEVO: Generar el log detallado de Extensions (Solo para empleado y si no es estático)
+      /// NUEVO: Generar el log detallado de Extensions (Solo para empleado y si no es estático)
       // OPTIMIZACIÓN: Si existe en metrics (de las llamadas), lo reusamos. Si no, lo consultamos.
       var logLookup = metrics.savedDeviceLookup || buildDeviceLookup(officialEmployeeEmail, finalName, startDate, endDate);
       if (logLookup.mode === 'byDate' || logLookup.mode === 'none') {
@@ -309,7 +348,8 @@ function processUserFilters(form) {
                      day: logDayKey,
                      found: true,
                      office: logLookup.map[logDayKey].office,
-                     role: logLookup.map[logDayKey].role
+                     role: logLookup.map[logDayKey].role,
+                     device: logLookup.map[logDayKey].device // <-- AÑADIDO: Capturamos el nombre del Device
                  });
              } else {
                  deviceExtensionLog.push({
@@ -322,11 +362,15 @@ function processUserFilters(form) {
       }
       
   } else if (reportMode === 'global') {
-      var topAgents = [];
+     var topAgents = [];
       for (var agent in metrics.agentVolume) {
-        // Ignoramos los envíos automáticos / desconocidos
-        if (EXCLUDED_AGENTS.indexOf(agent.toLowerCase()) === -1) {
-          topAgents.push({name: agent, count: metrics.agentVolume[agent]});
+        if (!isExcludedAgent(agent)) {
+          var profile = resolveAgentProfile(agent, metrics.agentDisplay[agent] || agent);
+          
+          // REGLA CORREGIDA: Solo lo metemos al Top si existe en la base de datos
+          if (profile.inDatabase) {
+            topAgents.push({name: profile.name, count: metrics.agentVolume[agent]});
+          }
         }
       }
       topAgents.sort(function(a,b) { return b.count - a.count; });
@@ -458,14 +502,34 @@ function processFolder(folderId, prefix, months, startDt, endDt, reportMode, ema
               var dayOfWeek = rowDate.getDay();
               var hour = rowDate.getHours();
 
-              var agentKey = rowUser.trim().toLowerCase();
+              // --- NUEVO: RESOLUCIÓN DE IDENTIDAD (UNIFICA SMS Y LLAMADAS POR EMPLEADO) ---
+              var resolvedAgentId = rowUser.trim().toLowerCase();
+              var resolvedAgentName = rowUser.trim();
+
+              if (reportMode === 'teams' && matchedTeamId) {
+                   resolvedAgentId = matchedTeamId.toLowerCase();
+                   for (var k = 0; k < teamMembers.length; k++) {
+                       if (teamMembers[k].id.toLowerCase() === resolvedAgentId) { resolvedAgentName = teamMembers[k].name; break; }
+                   }
+              } else if (reportMode === 'global') {
+                   var fuzzy = findEmployeeByFuzzyName(rowUser);
+                   if (fuzzy) {
+                       resolvedAgentId = fuzzy.matchedEmail.toLowerCase();
+                       resolvedAgentName = fuzzy.name;
+                   }
+              } else if (reportMode === 'employee') {
+                   resolvedAgentId = email.toLowerCase();
+              }
+
+              var agentKey = resolvedAgentId;
+
               if (!metrics.agentDaily[agentKey]) {
                 metrics.agentDaily[agentKey] = { sms: {}, callsOut: {}, callsIn: {} };
-                metrics.agentDisplay[agentKey] = rowUser;
+                metrics.agentDisplay[agentKey] = resolvedAgentName;
               }
 
               if (reportMode === 'employee') {
-                  metrics.matchedEmails[rowUser] = true; 
+                  metrics.matchedEmails[agentKey] = true; 
                   metrics.activeSpans[dayKey] = metrics.activeSpans[dayKey] || { min: startMs, max: startMs };
                   metrics.activeSpans[dayKey].min = Math.min(metrics.activeSpans[dayKey].min, startMs);
                   metrics.activeSpans[dayKey].max = Math.max(metrics.activeSpans[dayKey].max, startMs);
@@ -475,7 +539,7 @@ function processFolder(folderId, prefix, months, startDt, endDt, reportMode, ema
                   metrics.teamStats[matchedTeamId].activeSpans[dayKey].max = Math.max(metrics.teamStats[matchedTeamId].activeSpans[dayKey].max, startMs);
               }
 
-              metrics.agentVolume[rowUser] = (metrics.agentVolume[rowUser] || 0) + 1;
+              metrics.agentVolume[agentKey] = (metrics.agentVolume[agentKey] || 0) + 1;
 
               var pName = patIdx > -1 && row[patIdx] ? row[patIdx].trim().toLowerCase() : "";
               var pId = chartIdx > -1 && row[chartIdx] ? row[chartIdx].trim() : "";
@@ -565,16 +629,19 @@ function processCallsFolderV2(folderId, prefix, months, startDt, endDt, reportMo
   
   // 1 y 2. PREPARAR EL LOOKUP DE DISPOSITIVOS UNA SOLA VEZ
   var missingDeviceLogged = {}; // Nuestro "set" para no duplicar gaps
-  
+  var globalDeviceMap = null; // NUEVO: Para el modo Global
+
   if (reportMode === 'employee') {
     deviceLookup = buildDeviceLookup(email, email, startDt, endDt);
-    metrics.savedDeviceLookup = deviceLookup; // OPTIMIZACIÓN: Guardamos en metrics
+    metrics.savedDeviceLookup = deviceLookup; 
   } else if (reportMode === 'teams') {
     deviceLookup = {};
     for (var j = 0; j < teamMembers.length; j++) {
       deviceLookup[teamMembers[j].id] = buildDeviceLookup(teamMembers[j].id, teamMembers[j].name, startDt, endDt);
     }
-    metrics.savedDeviceLookup = deviceLookup; // OPTIMIZACIÓN: Guardamos en metrics
+    metrics.savedDeviceLookup = deviceLookup; 
+  } else if (reportMode === 'global') {
+    globalDeviceMap = buildGlobalDeviceLookupMap(startDt, endDt);
   }
 
   var folder = DriveApp.getFolderById(folderId);
@@ -676,14 +743,34 @@ function processCallsFolderV2(folderId, prefix, months, startDt, endDt, reportMo
               var dayOfWeek = rowDate.getDay();
               var hour = rowDate.getHours();
 
-              var agentKey = rowUser.trim().toLowerCase();
+              // --- NUEVO: RESOLUCIÓN DE IDENTIDAD PARA LLAMADAS MEDIANTE DEVICE ---
+              var resolvedAgentId = rowUser.trim().toLowerCase();
+              var resolvedAgentName = rowUser.trim();
+
+              if (reportMode === 'teams' && matchedTeamId) {
+                  resolvedAgentId = matchedTeamId.toLowerCase();
+                  for (var k = 0; k < teamMembers.length; k++) {
+                      if (teamMembers[k].id.toLowerCase() === resolvedAgentId) { resolvedAgentName = teamMembers[k].name; break; }
+                  }
+              } else if (reportMode === 'global' && globalDeviceMap) {
+                  var owner = getOwnerOfDeviceGlobally(globalDeviceMap, rowDevice, dayKey);
+                  if (owner) {
+                      resolvedAgentId = owner.id.toLowerCase();
+                      resolvedAgentName = owner.name;
+                  }
+              } else if (reportMode === 'employee') {
+                  resolvedAgentId = email.toLowerCase();
+              }
+
+              var agentKey = resolvedAgentId;
+
               if (!metrics.agentDaily[agentKey]) {
                 metrics.agentDaily[agentKey] = { sms: {}, callsOut: {}, callsIn: {} };
-                metrics.agentDisplay[agentKey] = rowUser;
+                metrics.agentDisplay[agentKey] = resolvedAgentName;
               }
 
               if (reportMode === 'employee') {
-                  metrics.matchedEmails[rowUser] = true; 
+                  metrics.matchedEmails[agentKey] = true; 
                   metrics.activeSpans[dayKey] = metrics.activeSpans[dayKey] || { min: startMs, max: startMs };
                   metrics.activeSpans[dayKey].min = Math.min(metrics.activeSpans[dayKey].min, startMs);
                   metrics.activeSpans[dayKey].max = Math.max(metrics.activeSpans[dayKey].max, startMs);
@@ -693,7 +780,7 @@ function processCallsFolderV2(folderId, prefix, months, startDt, endDt, reportMo
                   metrics.teamStats[matchedTeamId].activeSpans[dayKey].max = Math.max(metrics.teamStats[matchedTeamId].activeSpans[dayKey].max, startMs);
               }
 
-              metrics.agentVolume[rowUser] = (metrics.agentVolume[rowUser] || 0) + 1;
+              metrics.agentVolume[agentKey] = (metrics.agentVolume[agentKey] || 0) + 1;
 
               var pName = patIdx > -1 && row[patIdx] ? row[patIdx].trim().toLowerCase() : "";
               if (pName) metrics.contactedPatients.names[pName] = true; 
@@ -1091,8 +1178,8 @@ function getEmployeeProfile(email) {
   
   try {
     var SHEET_NAME = 'Data';
-    var sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_NAME);
-    var data = sheet.getDataRange().getValues();
+    var data = getSheetDataCached(SHEET_NAME);
+    if (!data) return null;
     
     // Empezamos en 1 asumiendo que la fila 0 son los títulos (Team, Email, Name, Device Name, Mon, Tue...)
     for (var i = 1; i < data.length; i++) {
@@ -1128,18 +1215,15 @@ function lookupExtensionDevicesInRange(employeeName, startDate, endDate) {
   if (!employeeName) return deviceMap;
   
   try {
-    var sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName('Extensions');
-    if (!sheet) return deviceMap;
-    
-    var data = sheet.getDataRange().getValues();
-    if (data.length < 2) return deviceMap;
+    var data = getSheetDataCached('Extensions');
+    if (!data || data.length < 2) return deviceMap;
     
     var headers = data[0].map(function(h) { return h.toString().toLowerCase().trim(); });
     var dateIdx = headers.indexOf('date');
     var empIdx = headers.indexOf('employee');
     var deviceIdx = headers.indexOf('device name');
-    var officeIdx = headers.indexOf('office');     // NUEVO
-    var positionIdx = headers.indexOf('position'); // NUEVO
+    var officeIdx = headers.indexOf('office');
+    var positionIdx = headers.indexOf('position');
     
     if (dateIdx === -1 || empIdx === -1 || deviceIdx === -1) {
       return deviceMap; 
@@ -1147,28 +1231,48 @@ function lookupExtensionDevicesInRange(employeeName, startDate, endDate) {
     
     var searchName = String(employeeName).trim().toLowerCase();
     
+    var startOnly = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate(), 0, 0, 0).getTime();
+    var endOnly = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate(), 23, 59, 59).getTime();
+    
     for (var i = 1; i < data.length; i++) {
       var rowDateVal = data[i][dateIdx];
       if (!rowDateVal) continue;
       
-      var rowDate = new Date(rowDateVal);
-      if (isNaN(rowDate.getTime())) continue;
+      var strVal = String(rowDateVal).trim();
+      var rowDate = null;
       
-      var rowDateOnly = new Date(rowDate.getFullYear(), rowDate.getMonth(), rowDate.getDate(), 0, 0, 0);
-      var startOnly = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate(), 0, 0, 0);
-      var endOnly = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate(), 0, 0, 0);
+      // 🛡️ PARSEO SEGURO DE TEXTO PURO (Destruye cualquier interferencia de zona horaria)
+      if (strVal.indexOf("/") !== -1) {
+        // Formato visual de Sheets: "8/12/2026" o "08/12/2026"
+        var parts = strVal.split("/");
+        if (parts.length === 3) {
+            // Fijamos la hora artificialmente a las 12 PM para evitar bordes de medianoche
+            rowDate = new Date(parseInt(parts[2], 10), parseInt(parts[0], 10) - 1, parseInt(parts[1], 10), 12, 0, 0);
+        }
+      } else if (strVal.indexOf("-") !== -1) {
+        // Por si se filtra un formato ISO: "2026-08-12"
+        var parts = strVal.split("-");
+        if (parts.length >= 3) {
+            rowDate = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2].substring(0,2), 10), 12, 0, 0);
+        }
+      }
       
-      if (rowDateOnly >= startOnly && rowDateOnly <= endOnly) {
+      if (!rowDate || isNaN(rowDate.getTime())) continue;
+      
+      var rowMs = rowDate.getTime();
+      
+      if (rowMs >= startOnly && rowMs <= endOnly) {
         var rowEmpName = String(data[i][empIdx]).trim().toLowerCase();
         if (!rowEmpName) continue;
         
         if (rowEmpName === searchName || searchName.indexOf(rowEmpName) !== -1 || rowEmpName.indexOf(searchName) !== -1) {
            var dayKey = (rowDate.getMonth() + 1) + "/" + rowDate.getDate() + "/" + rowDate.getFullYear();
            var deviceName = String(data[i][deviceIdx]).trim();
+           
            if (deviceName) {
-             // NUEVO: Guardamos el objeto completo
              var officeVal = (officeIdx !== -1 && data[i][officeIdx]) ? String(data[i][officeIdx]).trim() : "N/A";
              var positionVal = (positionIdx !== -1 && data[i][positionIdx]) ? String(data[i][positionIdx]).trim() : "N/A";
+             
              deviceMap[dayKey] = {
                device: deviceName,
                office: officeVal,
@@ -1179,7 +1283,7 @@ function lookupExtensionDevicesInRange(employeeName, startDate, endDate) {
       }
     }
   } catch(e) {
-    Logger.log("Error leyendo Extensions sheet: " + e.message);
+    Logger.log("Error reading Extensions sheet: " + e.message);
   }
   
   return deviceMap;
@@ -1409,7 +1513,8 @@ function resolveAgentProfile(agentKey, displayFallback) {
   
   return {
     team: (profile && profile.team) ? profile.team : "Unassigned",
-    name: (profile && profile.name) ? profile.name : displayFallback
+    name: (profile && profile.name) ? profile.name : displayFallback,
+    inDatabase: (profile !== null) // <-- NUEVO: Detecta si realmente existe en el Excel
   };
 }
 
@@ -1421,7 +1526,13 @@ function buildEmployeeAverages(metrics, channel) {
   var includeCalls = (channel === 'calls' || channel === 'both');
   
   for (var clave in metrics.agentDaily) {
-    if (EXCLUDED_AGENTS.indexOf(clave.toLowerCase()) !== -1) continue;
+    if (isExcludedAgent(clave)) continue;
+
+    var displayFallback = (metrics.agentDisplay && metrics.agentDisplay[clave]) ? metrics.agentDisplay[clave] : clave;
+    var profile = resolveAgentProfile(clave, displayFallback);
+    
+    // REGLA CORREGIDA: Se excluye SOLO si no fue encontrado en la base de datos de RRHH
+    if (!profile.inDatabase) continue;
 
     var agentData = metrics.agentDaily[clave];
     var daysMap = {};
@@ -1490,12 +1601,137 @@ function buildEmployeeAverages(metrics, channel) {
   }
   
   result.sort(function(a, b) {
-    // Si avgSms es null (porque consultaron solo llamadas), lo tratamos como 0 para no romper el orden
-    var valA = a.avgSms || 0;
-    var valB = b.avgSms || 0;
-    
-    return valB - valA;
+    // Ordenar de mayor a menor por el total de registros (Llamadas + SMS)
+    return b.totalRecords - a.totalRecords;
   });
   
   return result;
+}
+
+// --- PERSISTENT CACHE TO PREVENT GOOGLE SHEETS TIMEOUTS ---
+var GLOBAL_SHEET_CACHE = {}; // Execution-level memory
+
+function getSheetDataCached(sheetName) {
+  if (GLOBAL_SHEET_CACHE[sheetName]) {
+    return GLOBAL_SHEET_CACHE[sheetName];
+  }
+
+  var cache = CacheService.getScriptCache();
+  var cacheKey = 'ahmg_sheet_cache_' + sheetName;
+  var cachedData = cache.get(cacheKey);
+
+  if (cachedData) {
+    try {
+      var parsedData = JSON.parse(cachedData);
+      GLOBAL_SHEET_CACHE[sheetName] = parsedData; 
+      return parsedData;
+    } catch (e) {}
+  }
+
+  var sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(sheetName);
+  if (sheet) {
+    // 🚀 LA MAGIA ESTÁ AQUÍ: Usamos getDisplayValues() para leer puro texto literal
+    var data = sheet.getDataRange().getDisplayValues();
+    GLOBAL_SHEET_CACHE[sheetName] = data; 
+    
+    try {
+      var jsonString = JSON.stringify(data);
+      if (jsonString.length < 100000) {
+        cache.put(cacheKey, jsonString, 1800); 
+      }
+    } catch (e) {
+      Logger.log("Warning: Could not save " + sheetName + " to persistent cache: " + e.message);
+    }
+    
+    return data;
+  }
+  
+  return null;
+}
+
+// --- NUEVO: LIMPIEZA MANUAL DEL CACHÉ DESDE LA UI ---
+function clearPersistentCache() {
+  var cache = CacheService.getScriptCache();
+  
+  // Limpiar las llaves específicas que creamos
+  cache.remove('ahmg_sheet_cache_Data');
+  cache.remove('ahmg_sheet_cache_Extensions');
+  
+  // Vaciar la memoria de la ejecución actual
+  GLOBAL_SHEET_CACHE = {}; 
+  
+  return true;
+}
+
+// --- NUEVO: MOTOR DE MAPEO GLOBAL DE DISPOSITIVOS ---
+function buildGlobalDeviceLookupMap(startDate, endDate) {
+  var map = { static: {}, dynamic: {} };
+  
+  // 1. Devices fijos (Data)
+  var teamsDb = getTeamsFromSheet();
+  if (teamsDb && teamsDb.status === 'success' && teamsDb.data) {
+    for (var t in teamsDb.data) {
+      var members = teamsDb.data[t];
+      for (var i = 0; i < members.length; i++) {
+        var m = members[i];
+        if (m.deviceName) {
+          map.static[m.deviceName.toLowerCase()] = { id: m.id, name: m.name, team: t };
+        }
+      }
+    }
+  }
+  
+  // 2. Devices dinámicos (Extensions)
+  var extData = getSheetDataCached('Extensions');
+  if (extData && extData.length >= 2) {
+    var headers = extData[0].map(function(h) { return h.toString().toLowerCase().trim(); });
+    var dateIdx = headers.indexOf('date');
+    var empIdx = headers.indexOf('employee');
+    var deviceIdx = headers.indexOf('device name');
+    
+    if (dateIdx !== -1 && empIdx !== -1 && deviceIdx !== -1) {
+      var startOnly = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate(), 0, 0, 0).getTime();
+      var endOnly = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate(), 23, 59, 59).getTime();
+      
+      for (var i = 1; i < extData.length; i++) {
+        var strVal = String(extData[i][dateIdx]).trim();
+        var rowDate = null;
+        if (strVal.indexOf("/") !== -1) {
+          var parts = strVal.split("/");
+          if (parts.length === 3) rowDate = new Date(parseInt(parts[2], 10), parseInt(parts[0], 10) - 1, parseInt(parts[1], 10), 12, 0, 0);
+        } else if (strVal.indexOf("-") !== -1) {
+          var parts = strVal.split("-");
+          if (parts.length >= 3) rowDate = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2].substring(0,2), 10), 12, 0, 0);
+        }
+        if (!rowDate || isNaN(rowDate.getTime())) continue;
+        var rowMs = rowDate.getTime();
+        
+        if (rowMs >= startOnly && rowMs <= endOnly) {
+          var rowEmpName = String(extData[i][empIdx]).trim();
+          var rowDevice = String(extData[i][deviceIdx]).trim().toLowerCase();
+          if (rowEmpName && rowDevice) {
+            var fuzzy = findEmployeeByFuzzyName(rowEmpName);
+            if (fuzzy) {
+              var dayKey = (rowDate.getMonth() + 1) + "/" + rowDate.getDate() + "/" + rowDate.getFullYear();
+              if (!map.dynamic[dayKey]) map.dynamic[dayKey] = {};
+              map.dynamic[dayKey][rowDevice] = { id: fuzzy.matchedEmail, name: fuzzy.name, team: fuzzy.team };
+            }
+          }
+        }
+      }
+    }
+  }
+  return map;
+}
+
+function getOwnerOfDeviceGlobally(globalMap, deviceName, dayKey) {
+  if (!deviceName || !globalMap) return null;
+  var d = String(deviceName).trim().toLowerCase();
+  if (globalMap.dynamic[dayKey] && globalMap.dynamic[dayKey][d]) {
+    return globalMap.dynamic[dayKey][d];
+  }
+  if (globalMap.static[d]) {
+    return globalMap.static[d];
+  }
+  return null;
 }

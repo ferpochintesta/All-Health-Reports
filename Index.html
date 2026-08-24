@@ -3,7 +3,6 @@
   <head>
     <base target="_top">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
     <style>
@@ -48,7 +47,7 @@
 
       .report-logo-web, .report-logo-print { background-image: var(--logo-url); background-size: contain; background-repeat: no-repeat; background-position: center; width: 100%; aspect-ratio: 3 / 1; margin: 0 auto; display: block; }
       .report-logo-web { max-width: 180px; margin-bottom: 10px; }
-      .report-logo-print { max-width: 280px; margin-bottom: 20px; display: none; }
+      .report-logo-print { max-width: 280px; margin-bottom: 20px; display: none; } 
       .page-break { display: none; }
 
       .editable-ai { font-size: 14px; line-height: 1.6; color: #333; padding: 10px; background: #fff; border: 1px dashed #bdc3c7; border-radius: 4px; transition: border 0.3s; }
@@ -96,6 +95,8 @@
         <button id="btnModGlobal" class="btn-active" type="button" onclick="switchModule('global')">🌍 Global & Office</button>
         <button id="btnModTeams" class="btn-inactive" type="button" onclick="switchModule('teams')">👥 Teams</button>
         <button id="btnModEmployee" class="btn-inactive" type="button" onclick="switchModule('employee')">👤 Employee</button>
+
+        <button id="btnRefreshCache" type="button" onclick="forceRefreshCache()" style="background-color: #f39c12; color: white; margin-left: 10px;" title="Force refresh HR database">🔄 Refresh DB</button>
       </div>
       <hr class="hide-on-print">
 
@@ -479,18 +480,25 @@
           } else { html += `<p style='color: #999; font-style: italic; font-size: 14px;'>No call activity found.</p>`; }
         }
 
-        // --- NUEVO: REGISTRO DE DISPOSITIVO (EXTENSIONS) ---
+      // --- NUEVO: REGISTRO DE DISPOSITIVO (EXTENSIONS) ---
       if (data.reportMode === 'employee' && data.deviceExtensionLog && data.deviceExtensionLog.length > 0) {
         html += `<div style='background: white; padding: 15px; border-radius: 6px; border: 1px solid #e1e8ed; margin-top: 15px; margin-bottom: 15px;'>`;
         html += `<h4 class='section-title' style='color: #16a085; border-color: #16a085; margin-top:0;'>📟 Device (Extension)</h4>`;
         html += `<ul style='font-size: 13px; margin: 0; padding-left: 20px;'>`;
-        data.deviceExtensionLog.forEach(entry => {
-          if (entry.found) {
-            html += `<li>${entry.day} — ${entry.office} — ${entry.role}</li>`;
-          } else {
-            html += `<li style='color: #e74c3c; font-weight: 500;'>${entry.day} — ⚠️ No registered device record was found for this employee.</li>`;
-          }
-        });
+        
+        // Filtramos para obtener SOLO los días donde sí se encontró un dispositivo
+        let foundDevices = data.deviceExtensionLog.filter(entry => entry.found);
+        
+        if (foundDevices.length > 0) {
+          // Si hay días con dispositivo, los mostramos en el formato requerido
+          foundDevices.forEach(entry => {
+            html += `<li>${entry.day} — ${entry.office} — ${entry.role} — <strong>${entry.device}</strong></li>`;
+          });
+        } else {
+          // Si el arreglo filtrado está vacío, significa que ningún día tuvo dispositivo
+          html += `<li style='color: #e74c3c; font-weight: 500;'>⚠️ No registered device record was found for this employee in the selected period.</li>`;
+        }
+        
         html += `</ul></div>`;
       }
 
@@ -953,6 +961,39 @@
           const d4 = getBasicData(paData.insuranceCounts);
           createPAChart('paChart4', 'paTitle4', 'Top Insurance Plans', 'doughnut', d4.labels, d4.values, defaultColors, false);
         }
+      }
+
+      // --- NUEVO: FUNCIÓN PARA REFRESCAR EL CACHÉ ---
+      function forceRefreshCache() {
+        const btn = document.getElementById('btnRefreshCache');
+        const originalText = btn.innerHTML;
+        
+        // Estado de carga
+        btn.innerHTML = "⏳ Refreshing...";
+        btn.disabled = true;
+
+        google.script.run
+          .withSuccessHandler(function() {
+            btn.innerHTML = "✅ Database Updated!";
+            window.teamsLoaded = false; // Fuerza a que se vuelva a cargar la lista de equipos
+            
+            // Si el usuario está en la pestaña 'teams', recargamos el dropdown inmediatamente
+            if(document.getElementById('reportMode').value === 'teams') {
+               switchModule('teams'); 
+            }
+            
+            // Restaura el botón después de 3 segundos
+            setTimeout(() => { 
+                btn.innerHTML = originalText; 
+                btn.disabled = false; 
+            }, 3000);
+          })
+          .withFailureHandler(function(err) {
+            alert("Error refreshing database: " + err.message);
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+          })
+          .clearPersistentCache(); // Llama a la función del servidor
       }
 
     </script>
