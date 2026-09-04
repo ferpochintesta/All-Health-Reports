@@ -56,8 +56,11 @@ function getPAMetricsData(reportMode, teamName, employeeEmail, startDateStr, end
     
     for (let i = 0; i < allPAMembers.length; i++) {
       let memberName = allPAMembers[i].toLowerCase().trim();
-      // Si la cadena combinada incluye "anna", el match es exitoso
-      if (searchString.includes(memberName)) {
+      
+      // Usar RegEx para coincidencia de palabra completa (evita que 'breanna' haga match con 'anna')
+      let regex = new RegExp("\\b" + memberName + "\\b", "i");
+      
+      if (regex.test(searchString)) {
         selection = allPAMembers[i];
         break;
       }

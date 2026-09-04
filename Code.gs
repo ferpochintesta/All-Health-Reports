@@ -860,17 +860,8 @@ function compileInsights(m) { var p="Morning (6 AM - 12 PM)", mh=m.hours.morning
 function calculateGaps(tl, schedule, form) {
   if (tl.length === 0) return [];
 
-  // ========================================================
-  // ⚙️ CONFIGURATION OF MEETINGS EXEMPT FROM INACTIVITY
-  // day: 0=Domingo, 1=Lunes, 2=Martes, 3=Miércoles, 4=Jueves, 5=Viernes, 6=Sábado
-  // start / end: Formato 24h (ej. 14.0 = 2:00 PM, 14.5 = 2:30 PM, 8.5 = 8:30 AM)
-  // ========================================================
-  var EXEMPT_MEETINGS = [
-    { day: 3, start: 14.0, end: 15.0 }, // Wednesday from 2:00 PM to 3:00 PM
-    
-    // You can add more separated by commas. For example, one at 8:30 AM:
-    // { day: 3, start: 8.5, end: 9.5 } 
-  ];
+  // Obtenemos las reuniones directamente desde la pestaña "Meetings" del Excel
+  var EXEMPT_MEETINGS = getExemptMeetingsFromSheet();
 
   // Internal function to intelligently cut down downtime (lunch or meetings)
   function removeTimeRange(blocks, startMs, endMs) {
@@ -1525,73 +1516,74 @@ function buildEmployeeAverages(metrics, channel) {
   var includeSms = (channel === 'sms' || channel === 'both');
   var includeCalls = (channel === 'calls' || channel === 'both');
   
+  // 1. Agrupamos los datos por Empleado Oficial para fusionar identidades divididas
+  var mergedAgents = {};
+  
   for (var clave in metrics.agentDaily) {
     if (isExcludedAgent(clave)) continue;
 
     var displayFallback = (metrics.agentDisplay && metrics.agentDisplay[clave]) ? metrics.agentDisplay[clave] : clave;
     var profile = resolveAgentProfile(clave, displayFallback);
     
-    // REGLA CORREGIDA: Se excluye SOLO si no fue encontrado en la base de datos de RRHH
     if (!profile.inDatabase) continue;
 
-    var agentData = metrics.agentDaily[clave];
-    var daysMap = {};
+    var empName = profile.name;
     
+    // Si es la primera vez que vemos a este empleado, le creamos su contenedor
+    if (!mergedAgents[empName]) {
+        mergedAgents[empName] = {
+            team: profile.team,
+            employee: empName,
+            daysMap: {},
+            totalSms: 0,
+            totalCallsOut: 0,
+            totalCallsIn: 0
+        };
+    }
+
+    var agentData = metrics.agentDaily[clave];
+    
+    // Sumamos los SMS de esta clave al total del empleado
     if (includeSms && agentData.sms) {
       for (var day in agentData.sms) {
-        daysMap[day] = true;
+        mergedAgents[empName].daysMap[day] = true;
+        mergedAgents[empName].totalSms += agentData.sms[day] || 0;
       }
     }
     
+    // Sumamos las Llamadas de esta clave al total del empleado
     if (includeCalls) {
       if (agentData.callsOut) {
         for (var day in agentData.callsOut) {
-          daysMap[day] = true;
+          mergedAgents[empName].daysMap[day] = true;
+          mergedAgents[empName].totalCallsOut += agentData.callsOut[day] || 0;
         }
       }
       if (agentData.callsIn) {
         for (var day in agentData.callsIn) {
-          daysMap[day] = true;
+          mergedAgents[empName].daysMap[day] = true;
+          mergedAgents[empName].totalCallsIn += agentData.callsIn[day] || 0;
         }
       }
     }
+  }
+  
+  // 2. Ahora calculamos los promedios sobre los datos ya unificados
+  for (var agent in mergedAgents) {
+    var data = mergedAgents[agent];
+    var activeDays = Object.keys(data.daysMap).length;
     
-    var activeDays = Object.keys(daysMap).length;
     if (activeDays === 0) continue;
     
-    var totalSms = 0;
-    if (agentData.sms) {
-      for (var day in agentData.sms) {
-        totalSms += agentData.sms[day] || 0;
-      }
-    }
+    var totalRecords = data.totalSms + data.totalCallsOut + data.totalCallsIn;
     
-    var totalCallsOut = 0;
-    if (agentData.callsOut) {
-      for (var day in agentData.callsOut) {
-        totalCallsOut += agentData.callsOut[day] || 0;
-      }
-    }
-    
-    var totalCallsIn = 0;
-    if (agentData.callsIn) {
-      for (var day in agentData.callsIn) {
-        totalCallsIn += agentData.callsIn[day] || 0;
-      }
-    }
-    
-    var totalRecords = totalSms + totalCallsOut + totalCallsIn;
-    
-    var displayFallback = (metrics.agentDisplay && metrics.agentDisplay[clave]) ? metrics.agentDisplay[clave] : clave;
-    var profile = resolveAgentProfile(clave, displayFallback);
-    
-    var avgSms = includeSms ? Math.round((totalSms / activeDays) * 10) / 10 : null;
-    var avgCallsOut = includeCalls ? Math.round((totalCallsOut / activeDays) * 10) / 10 : null;
-    var avgCallsIn = includeCalls ? Math.round((totalCallsIn / activeDays) * 10) / 10 : null;
+    var avgSms = includeSms ? Math.round((data.totalSms / activeDays) * 10) / 10 : null;
+    var avgCallsOut = includeCalls ? Math.round((data.totalCallsOut / activeDays) * 10) / 10 : null;
+    var avgCallsIn = includeCalls ? Math.round((data.totalCallsIn / activeDays) * 10) / 10 : null;
     
     result.push({
-      team: profile.team,
-      employee: profile.name,
+      team: data.team,
+      employee: data.employee,
       totalRecords: totalRecords,
       activeDays: activeDays,
       avgSms: avgSms,
@@ -1656,6 +1648,7 @@ function clearPersistentCache() {
   // Limpiar las llaves específicas que creamos
   cache.remove('ahmg_sheet_cache_Data');
   cache.remove('ahmg_sheet_cache_Extensions');
+  cache.remove('ahmg_sheet_cache_Meetings');
   
   // Vaciar la memoria de la ejecución actual
   GLOBAL_SHEET_CACHE = {}; 
@@ -1734,4 +1727,40 @@ function getOwnerOfDeviceGlobally(globalMap, deviceName, dayKey) {
     return globalMap.static[d];
   }
   return null;
+}
+
+// --- NUEVO: LEER REUNIONES DESDE GOOGLE SHEETS ---
+function getExemptMeetingsFromSheet() {
+  var meetings = [];
+  try {
+    var data = getSheetDataCached('Meetings');
+    if (!data || data.length < 2) return meetings;
+    
+    // Mapeo para entender los días de la semana
+    var dayMap = {
+      "sunday": 0, "monday": 1, "tuesday": 2, "wednesday": 3,
+      "thursday": 4, "friday": 5, "saturday": 6
+    };
+    
+    for (var i = 1; i < data.length; i++) {
+      var dayStr = String(data[i][0]).trim().toLowerCase();
+      var startStr = String(data[i][1]).trim();
+      var endStr = String(data[i][2]).trim();
+      
+      // Validamos que la fila tenga datos y el día exista
+      if (dayStr && startStr && endStr && dayMap[dayStr] !== undefined) {
+        var startVal = convertTo24H(startStr);
+        var endVal = convertTo24H(endStr);
+        
+        meetings.push({
+          day: dayMap[dayStr],
+          start: startVal,
+          end: endVal
+        });
+      }
+    }
+  } catch (e) {
+    Logger.log("Error leyendo la hoja Meetings: " + e.message);
+  }
+  return meetings;
 }
