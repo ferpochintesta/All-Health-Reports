@@ -82,6 +82,7 @@ function getTeamsFromSheet() {
     var idIdx = headers.indexOf("id");
     var nameIdx = headers.indexOf("name");
     var deviceIdx = headers.indexOf("device name"); 
+    var aliasIdx = headers.indexOf("weave alias"); // <-- NUEVO: Buscamos la columna de Alias
 
     if (teamIdx === -1 || idIdx === -1 || nameIdx === -1) {
         return { status: "error", message: "Missing columns" };
@@ -89,19 +90,19 @@ function getTeamsFromSheet() {
 
     var teamsMap = {};
     for (var i = 1; i < data.length; i++) {
-      // FIX 1: Si la celda de Team está vacía, los asignamos a "Unassigned"
       var teamName = data[i][teamIdx] ? data[i][teamIdx].toString().trim() : "Unassigned"; 
       var empId = data[i][idIdx] ? data[i][idIdx].toString().trim() : "";
       var empName = data[i][nameIdx] ? data[i][nameIdx].toString().trim() : "";
       var deviceName = (deviceIdx !== -1 && data[i][deviceIdx]) ? data[i][deviceIdx].toString().trim() : null; 
+      var weaveAlias = (aliasIdx !== -1 && data[i][aliasIdx]) ? data[i][aliasIdx].toString().trim() : null; // <-- NUEVO
       
-      // FIX 2: Ya no exigimos que teamName exista para guardarlos en memoria
       if (empId) { 
         if (!teamsMap[teamName]) teamsMap[teamName] = [];
         teamsMap[teamName].push({ 
             id: empId.toLowerCase(), 
             name: empName || empId,
-            deviceName: deviceName 
+            deviceName: deviceName,
+            alias: weaveAlias // <-- NUEVO: Guardamos el alias en memoria
         });
       }
     }
@@ -137,7 +138,8 @@ function isExcludedAgent(identifier) {
 }
 
 function processUserFilters(form) {
-  var reportMode = form.reportMode || 'employee'; 
+  var reportMode = form.reportMode || 'employee';
+  var callMatchingMode = form.callMatchingMode || 'device'; 
   var rawEmployeeInput = form.employeeEmail ? form.employeeEmail.trim() : "";
   var employee = rawEmployeeInput; // Por defecto es lo que escribió el usuario
   var locationFilter = form.locationFilter || 'All'; 
@@ -239,7 +241,7 @@ function processUserFilters(form) {
   try {
     if (channel === 'calls' || channel === 'both') {
       if (CALLS_SOURCE_MODE === 'weave_v2') {
-        processCallsFolderV2(CALLS_FOLDER_ID, "Weave_Call_History", months, startDate, endDate, reportMode, employee, locationFilter, teamMembers, metrics, interactionsTimeline);
+        processCallsFolderV2(CALLS_FOLDER_ID, "Weave_Call_History", months, startDate, endDate, reportMode, employee, locationFilter, teamMembers, metrics, interactionsTimeline, null, callMatchingMode);
       } else {
         processFolder(CALLS_FOLDER_ID, "Weave_Phone_Report", months, startDate, endDate, reportMode, employee, locationFilter, teamMembers, "calls", metrics, interactionsTimeline);
       }
@@ -626,23 +628,37 @@ function processFolder(folderId, prefix, months, startDt, endDt, reportMode, ema
   }
 }
 
-function processCallsFolderV2(folderId, prefix, months, startDt, endDt, reportMode, email, locationFilter, teamMembers, metrics, timeline, deviceLookup) {
+function processCallsFolderV2(folderId, prefix, months, startDt, endDt, reportMode, email, locationFilter, teamMembers, metrics, timeline, deviceLookup, callMatchingMode) {
   
-  // 1 y 2. PREPARAR EL LOOKUP DE DISPOSITIVOS UNA SOLA VEZ
-  var missingDeviceLogged = {}; // Nuestro "set" para no duplicar gaps
-  var globalDeviceMap = null; // NUEVO: Para el modo Global
+  callMatchingMode = callMatchingMode || 'device'; // Seguro por defecto
+  
+  var missingDeviceLogged = {}; 
+  var globalDeviceMap = null; 
+  var validAgentsForUserMatch = []; // NUEVO: Para almacenar todos los agentes de RRHH
 
-  if (reportMode === 'employee') {
-    deviceLookup = buildDeviceLookup(email, email, startDt, endDt);
-    metrics.savedDeviceLookup = deviceLookup; 
-  } else if (reportMode === 'teams') {
-    deviceLookup = {};
-    for (var j = 0; j < teamMembers.length; j++) {
-      deviceLookup[teamMembers[j].id] = buildDeviceLookup(teamMembers[j].id, teamMembers[j].name, startDt, endDt);
+  // 1. PREPARACIÓN INICIAL (Depende del modo elegido)
+  if (callMatchingMode === 'user') {
+    // Si es modo "User", extraemos la base de datos de RRHH completa al inicio
+    var db = getTeamsFromSheet();
+    if (db && db.status === 'success' && db.data) {
+      for (var t in db.data) {
+        validAgentsForUserMatch = validAgentsForUserMatch.concat(db.data[t]);
+      }
     }
-    metrics.savedDeviceLookup = deviceLookup; 
-  } else if (reportMode === 'global') {
-    globalDeviceMap = buildGlobalDeviceLookupMap(startDt, endDt);
+  } else {
+    // Modo "Device": Configuración de memoria actual
+    if (reportMode === 'employee') {
+      deviceLookup = buildDeviceLookup(email, email, startDt, endDt);
+      metrics.savedDeviceLookup = deviceLookup; 
+    } else if (reportMode === 'teams') {
+      deviceLookup = {};
+      for (var j = 0; j < teamMembers.length; j++) {
+        deviceLookup[teamMembers[j].id] = buildDeviceLookup(teamMembers[j].id, teamMembers[j].name, startDt, endDt);
+      }
+      metrics.savedDeviceLookup = deviceLookup; 
+    } else if (reportMode === 'global') {
+      globalDeviceMap = buildGlobalDeviceLookupMap(startDt, endDt);
+    }
   }
 
   var folder = DriveApp.getFolderById(folderId);
@@ -669,7 +685,7 @@ function processCallsFolderV2(folderId, prefix, months, startDt, endDt, reportMo
         var durIdx = headers.indexOf('duration_secs');
         var cTypeIdx = headers.indexOf('call_direction');
         var resIdx = headers.indexOf('call_status');
-        var deviceIdx = headers.indexOf('device_name'); // NUEVO INDICE
+        var deviceIdx = headers.indexOf('device_name'); 
 
         if (dateIdx === -1) continue;
 
@@ -692,90 +708,137 @@ function processCallsFolderV2(folderId, prefix, months, startDt, endDt, reportMo
           if (rowDate >= startDt && rowDate <= endDt) {
             var rowUser = (userIdx > -1 && row[userIdx]) ? row[userIdx].trim() : "Unknown Agent";
             var rowLoc = (locIdx > -1 && row[locIdx]) ? row[locIdx].trim() : "Unknown";
-            var rowDevice = (deviceIdx > -1 && row[deviceIdx]) ? row[deviceIdx].trim() : ""; // EXTRAER DEVICE DE LA FILA
+            var rowDevice = (deviceIdx > -1 && row[deviceIdx]) ? row[deviceIdx].trim() : ""; 
 
-            var isMatch = false; var matchedTeamId = null;
-            // 4. Calculamos dayKey temprano para pasarlo al lookup
             var dayKey = (rowDate.getMonth() + 1) + "/" + rowDate.getDate() + "/" + rowDate.getFullYear();
 
-            // 4 y 5. LÓGICA DE MATCHING STRICTA
-            if (reportMode === 'employee') {
-                var expectedDevice = getDeviceForDay(deviceLookup, dayKey);
-                if (expectedDevice) {
-                    if (rowDevice.toLowerCase() === expectedDevice.toLowerCase()) {
-                        isMatch = true;
+            // ========================================================
+            // NUEVO MOTOR DE RESOLUCIÓN DE IDENTIDAD (DEVICE vs USER)
+            // ========================================================
+            var isMatch = false; 
+            var matchedTeamId = null;
+            var resolvedAgentId = rowUser.trim().toLowerCase();
+            var resolvedAgentName = rowUser.trim();
+
+            if (callMatchingMode === 'user') {
+                var matchCount = 0;
+                var matchedAgent = null;
+                
+                // Búsqueda Exacta (Solo por Weave Alias)
+                for (var m = 0; m < validAgentsForUserMatch.length; m++) {
+                    var ag = validAgentsForUserMatch[m];
+                    var isAgentMatch = false;
+                    
+                    // Solo buscamos si el agente tiene algo escrito en la columna Weave Alias
+                    if (ag.alias) {
+                        // Mantenemos el split(",") por si en el futuro necesitas poner dos alias (ej: "janet, janet o")
+                        var aliases = ag.alias.split(",");
+                        for (var a = 0; a < aliases.length; a++) {
+                            // Comparación EXACTA de texto, ignorando mayúsculas/minúsculas y espacios extra
+                            if (rowUser.trim().toLowerCase() === aliases[a].trim().toLowerCase()) {
+                                isAgentMatch = true;
+                                break; 
+                            }
+                        }
                     }
-                } else {
-                    // Sin device -> se excluye. Marcamos el gap una vez.
-                    var gapKey = email + "_" + dayKey;
-                    if (!missingDeviceLogged[gapKey]) {
-                        missingDeviceLogged[gapKey] = true;
-                        metrics.deviceCoverageGaps.push({ employee: email, day: dayKey });
+                    
+                    if (isAgentMatch) {
+                        matchCount++;
+                        matchedAgent = ag;
                     }
                 }
-            } else if (reportMode === 'global') {
-                // 6. Global queda intacto (por ubicación)
-                if (locationFilter === 'All' || rowLoc.toLowerCase().indexOf(locationFilter.toLowerCase()) !== -1) isMatch = true;
-            } else if (reportMode === 'teams') {
-                for (var j = 0; j < teamMembers.length; j++) {
-                    var tId = teamMembers[j].id;
-                    var tName = teamMembers[j].name;
-                    var expectedDevice = getDeviceForDay(deviceLookup[tId], dayKey);
-                    if (expectedDevice) {
-                        if (rowDevice.toLowerCase() === expectedDevice.toLowerCase()) {
+                
+                if (matchCount === 1) {
+                    matchedTeamId = matchedAgent.id;
+                    resolvedAgentId = matchedAgent.id.toLowerCase();
+                    resolvedAgentName = matchedAgent.name;
+                    
+                    if (reportMode === 'employee' && resolvedAgentId === email.toLowerCase()) {
+                        isMatch = true;
+                    } else if (reportMode === 'teams') {
+                        for (var tm = 0; tm < teamMembers.length; tm++) {
+                            if (teamMembers[tm].id.toLowerCase() === resolvedAgentId) { isMatch = true; break; }
+                        }
+                    } else if (reportMode === 'global') {
+                        if (locationFilter === 'All' || rowLoc.toLowerCase().indexOf(locationFilter.toLowerCase()) !== -1) isMatch = true;
+                    }
+                } else {
+                    // Logging de Fallas/Ambigüedades
+                    if (matchCount === 0) Logger.log("[User Mode] Zero matches for Weave user: " + rowUser);
+                    if (matchCount > 1) Logger.log("[User Mode] Ambiguous Match (" + matchCount + " agents) for Weave user: " + rowUser);
+                    
+                    // Si es global, lo conservamos en un "bucket" de errores para que los números generales cuadren
+                    if (reportMode === 'global') {
+                        if (locationFilter === 'All' || rowLoc.toLowerCase().indexOf(locationFilter.toLowerCase()) !== -1) {
                             isMatch = true;
-                            matchedTeamId = tId;
-                            break; // Se encontró de quién es la llamada, frenamos el loop
+                            resolvedAgentId = matchCount === 0 ? 'unresolved_' + rowUser.toLowerCase() : 'ambiguous_' + rowUser.toLowerCase();
+                            resolvedAgentName = matchCount === 0 ? rowUser + ' (Unresolved)' : rowUser + ' (Ambiguous)';
                         }
+                    }
+                }
+
+            } else {
+                // MODO LEGACY: DEVICE NAME
+                if (reportMode === 'employee') {
+                    var expectedDevice = getDeviceForDay(deviceLookup, dayKey);
+                    if (expectedDevice) {
+                        if (rowDevice.toLowerCase() === expectedDevice.toLowerCase()) isMatch = true;
                     } else {
-                        // Sin device -> registramos el gap
-                        var gapKey = tId + "_" + dayKey;
-                        if (!missingDeviceLogged[gapKey]) {
-                            missingDeviceLogged[gapKey] = true;
-                            metrics.deviceCoverageGaps.push({ employee: tName || tId, day: dayKey });
+                        var gapKey = email + "_" + dayKey;
+                        if (!missingDeviceLogged[gapKey]) { missingDeviceLogged[gapKey] = true; metrics.deviceCoverageGaps.push({ employee: email, day: dayKey }); }
+                    }
+                } else if (reportMode === 'global') {
+                    if (locationFilter === 'All' || rowLoc.toLowerCase().indexOf(locationFilter.toLowerCase()) !== -1) isMatch = true;
+                } else if (reportMode === 'teams') {
+                    for (var j = 0; j < teamMembers.length; j++) {
+                        var tId = teamMembers[j].id;
+                        var expectedDevice = getDeviceForDay(deviceLookup[tId], dayKey);
+                        if (expectedDevice) {
+                            if (rowDevice.toLowerCase() === expectedDevice.toLowerCase()) {
+                                isMatch = true; matchedTeamId = tId; break; 
+                            }
+                        } else {
+                            var gapKey = tId + "_" + dayKey;
+                            if (!missingDeviceLogged[gapKey]) { missingDeviceLogged[gapKey] = true; metrics.deviceCoverageGaps.push({ employee: teamMembers[j].name || tId, day: dayKey }); }
                         }
+                    }
+                }
+
+                // Resolución de Identidad basada en Device
+                if (isMatch) {
+                    if (reportMode === 'teams' && matchedTeamId) {
+                        resolvedAgentId = matchedTeamId.toLowerCase();
+                        for (var k = 0; k < teamMembers.length; k++) {
+                            if (teamMembers[k].id.toLowerCase() === resolvedAgentId) { resolvedAgentName = teamMembers[k].name; break; }
+                        }
+                    } else if (reportMode === 'global' && globalDeviceMap) {
+                        var owner = getOwnerOfDeviceGlobally(globalDeviceMap, rowDevice, dayKey);
+                        if (owner) {
+                            resolvedAgentId = owner.id.toLowerCase();
+                            resolvedAgentName = owner.name;
+                        } else {
+                            resolvedAgentId = 'unresolved_device';
+                            resolvedAgentName = 'Unresolved Device';
+                            var gapKey = 'GLOBAL_' + rowDevice.toLowerCase() + '_' + dayKey;
+                            if (!missingDeviceLogged[gapKey]) {
+                                missingDeviceLogged[gapKey] = true;
+                                metrics.deviceCoverageGaps.push({ employee: 'Unknown owner of device "' + rowDevice + '"', day: dayKey });
+                            }
+                        }
+                    } else if (reportMode === 'employee') {
+                        resolvedAgentId = email.toLowerCase();
                     }
                 }
             }
+            // ========================================================
+            // FIN MOTOR RESOLUCIÓN IDENTIDAD
+            // ========================================================
 
             if (isMatch) {
               var startMs = rowDate.getTime();
               var endMs = startMs; 
               var dayOfWeek = rowDate.getDay();
               var hour = rowDate.getHours();
-
-              // --- NUEVO: RESOLUCIÓN DE IDENTIDAD PARA LLAMADAS MEDIANTE DEVICE ---
-              var resolvedAgentId = rowUser.trim().toLowerCase();
-              var resolvedAgentName = rowUser.trim();
-
-              if (reportMode === 'teams' && matchedTeamId) {
-                  resolvedAgentId = matchedTeamId.toLowerCase();
-                  for (var k = 0; k < teamMembers.length; k++) {
-                      if (teamMembers[k].id.toLowerCase() === resolvedAgentId) { resolvedAgentName = teamMembers[k].name; break; }
-                  }
-              } else if (reportMode === 'global' && globalDeviceMap) {
-                  var owner = getOwnerOfDeviceGlobally(globalDeviceMap, rowDevice, dayKey);
-                  if (owner) {
-                      resolvedAgentId = owner.id.toLowerCase();
-                      resolvedAgentName = owner.name;
-                  } else {
-                      // No hay dueño confirmado del dispositivo ese día -> NO confiar en office_user.
-                      // Lo mandamos a un bucket "sin resolver" que no matchea a nadie real.
-                      resolvedAgentId = 'unresolved_device';
-                      resolvedAgentName = 'Unresolved Device';
-
-                      var gapKey = 'GLOBAL_' + rowDevice.toLowerCase() + '_' + dayKey;
-                      if (!missingDeviceLogged[gapKey]) {
-                          missingDeviceLogged[gapKey] = true;
-                          metrics.deviceCoverageGaps.push({ 
-                              employee: 'Unknown owner of device "' + rowDevice + '"', 
-                              day: dayKey 
-                          });
-                      }
-                  }
-              } else if (reportMode === 'employee') {
-                  resolvedAgentId = email.toLowerCase();
-              }
 
               var agentKey = resolvedAgentId;
 

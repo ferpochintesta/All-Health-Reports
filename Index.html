@@ -132,6 +132,14 @@
         </div>
 
         <div class="form-group">
+          <label for="callMatchingMode">Call Assignment Strategy</label>
+          <select id="callMatchingMode" name="callMatchingMode" style="background-color: #fdfefe; border-color: #3498db; color: #2c3e50; font-weight: bold;">
+            <option value="device" selected>📱 Match by Device Name (Extensions)</option>
+            <option value="user">👤 Match by User Name (Exact Word Match)</option>
+          </select>
+        </div>
+
+        <div class="form-group">
           <label for="dateRange">Report Period</label>
           <input type="text" id="dateRange" name="dateRange" placeholder="Select Start and End dates..." required style="background-color: #fff; cursor: pointer;">
         </div>
@@ -306,7 +314,8 @@
         // ACTUALIZAMOS EL PAYLOAD CON LAS FECHAS CORTADAS
         const formPayload = {
           reportMode: form.reportMode.value, teamFilter: form.teamFilter.value, locationFilter: form.locationFilter.value,
-          employeeEmail: form.employeeEmail.value, 
+          employeeEmail: form.employeeEmail.value,
+          callMatchingMode: form.callMatchingMode.value,
           startDate: finalStartDate, // <-- Usamos la fecha cortada
           endDate: finalEndDate,     // <-- Usamos la fecha cortada
           channel: form.channel.value, useSchedule: form.useSchedule.value,
