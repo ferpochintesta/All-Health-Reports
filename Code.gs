@@ -413,7 +413,8 @@ function processUserFilters(form) {
   return {
     status: "success",
     data: {
-      reportMode: reportMode, 
+      reportMode: reportMode,
+      callMatchingMode: callMatchingMode, 
       locationName: locationFilter, 
       employee: officialEmployeeEmail,
       employeeDisplayName: finalName,

@@ -490,7 +490,7 @@
         }
 
       // --- NUEVO: REGISTRO DE DISPOSITIVO (EXTENSIONS) ---
-      if (data.reportMode === 'employee' && data.deviceExtensionLog && data.deviceExtensionLog.length > 0) {
+      if (data.reportMode === 'employee' && data.callMatchingMode === 'device' && data.deviceExtensionLog && data.deviceExtensionLog.length > 0) {
         html += `<div style='background: white; padding: 15px; border-radius: 6px; border: 1px solid #e1e8ed; margin-top: 15px; margin-bottom: 15px;'>`;
         html += `<h4 class='section-title' style='color: #16a085; border-color: #16a085; margin-top:0;'>📟 Device (Extension)</h4>`;
         html += `<ul style='font-size: 13px; margin: 0; padding-left: 20px;'>`;
