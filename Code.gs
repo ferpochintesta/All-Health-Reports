@@ -19,7 +19,8 @@ const AUTHORIZED_MANAGERS = [
   "williamortiz@allhealthmedgroup.com",
   "fernandopochintesta@allhealthmedgroup.com",
   "linatascon@allhealthmedgroup.com",
-  "mariacastro@allhealthmedgroup.com"
+  "mariacastro@allhealthmedgroup.com",
+  "mateocalderon@allhealthmedgroup.com"
 ];
 
 const EXCLUDED_AGENTS = [
@@ -757,6 +758,20 @@ function processCallsFolderV2(folderId, prefix, months, startDt, endDt, reportMo
                   if (owner) {
                       resolvedAgentId = owner.id.toLowerCase();
                       resolvedAgentName = owner.name;
+                  } else {
+                      // No hay dueño confirmado del dispositivo ese día -> NO confiar en office_user.
+                      // Lo mandamos a un bucket "sin resolver" que no matchea a nadie real.
+                      resolvedAgentId = 'unresolved_device';
+                      resolvedAgentName = 'Unresolved Device';
+
+                      var gapKey = 'GLOBAL_' + rowDevice.toLowerCase() + '_' + dayKey;
+                      if (!missingDeviceLogged[gapKey]) {
+                          missingDeviceLogged[gapKey] = true;
+                          metrics.deviceCoverageGaps.push({ 
+                              employee: 'Unknown owner of device "' + rowDevice + '"', 
+                              day: dayKey 
+                          });
+                      }
                   }
               } else if (reportMode === 'employee') {
                   resolvedAgentId = email.toLowerCase();
