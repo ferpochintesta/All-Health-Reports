@@ -20,7 +20,8 @@ const AUTHORIZED_MANAGERS = [
   "fernandopochintesta@allhealthmedgroup.com",
   "linatascon@allhealthmedgroup.com",
   "mariacastro@allhealthmedgroup.com",
-  "mateocalderon@allhealthmedgroup.com"
+  "mateocalderon@allhealthmedgroup.com",
+  "kholilurrahman@allhealthmedgroup.com"
 ];
 
 const EXCLUDED_AGENTS = [

@@ -539,9 +539,37 @@
              teamMembersArr.slice(0, 5).forEach(ag => html += `<li><strong>${ag.name}</strong>: ~${ag.avgDailyPatients} unique patients per day</li>`);
              html += `</ul>`;
           }
-          if ((isGlobal || isTeam) && data.employeeAverages && data.employeeAverages.length > 0) {
+        }
+
+        // --- SALTO DE PÁGINA 1 (Para imprimir) ---
+        html += `<div class='page-break'></div>`;
+
+        // --- 4. CHARTS (VISUAL ANALYTICS) ---
+        if (mode === 'charts' || mode === 'ai') {
+          html += `<div id='chartsContainer' style='margin-bottom: 25px; padding: 20px; background: #fff; border: 1px solid #eee; border-radius: 6px;'>
+                     <h4 class='section-title' style='color:#34495e; border-color:#34495e; margin-top:0;'>📊 Visual Analytics</h4>`;
+          if (isGlobal) {
+              if (data.channel === 'calls' || data.channel === 'both') html += `<div style='display: flex; justify-content: center; margin-bottom: 40px;'><div style='width: 60%;'><canvas id='callAnswerRateChart'></canvas></div></div>`;
+              html += `<div style='margin-bottom: 40px;'><canvas id='busiestDayChart'></canvas></div>`;
+              html += `<div style='margin-bottom: 40px;'><canvas id='busiestHourChart'></canvas></div>`;
+          } else if (isTeam) {
+              if (data.channel === 'calls' || data.channel === 'both') html += `<div style='margin-bottom: 40px;'><canvas id='teamCallsChart'></canvas></div>`;
+              if (data.channel === 'sms' || data.channel === 'both') html += `<div style='margin-bottom: 40px;'><canvas id='teamSmsChart'></canvas></div>`;
+              html += `<div style='margin-bottom: 40px;'><canvas id='teamPaceChart'></canvas></div>`;
+          } else {
+              if (data.channel === 'calls' || data.channel === 'both') html += `<div style='margin-bottom: 40px;'><canvas id='callsTimelineChart'></canvas></div>`;
+              if (data.channel === 'sms' || data.channel === 'both') html += `<div style='margin-bottom: 40px;'><canvas id='smsTimelineChart'></canvas></div>`;
+              html += `<div style='margin-bottom: 40px;'><canvas id='hourlyChart'></canvas></div>`;
+          }
+          html += `</div>`;
+        }
+
+        // --- 4.5. TABLA DAILY AVERAGE ---
+        if ((isGlobal || isTeam) && data.employeeAverages && data.employeeAverages.length > 0) {
             const showSms = (data.channel === 'sms' || data.channel === 'both');
             const showCalls = (data.channel === 'calls' || data.channel === 'both');
+
+            html += `<div class='page-break'></div>`;
 
             html += `<div class='report-card' style='border-color: #8e44ad; margin-bottom: 25px; page-break-inside: avoid;'>`;
             html += `  <h4 class='section-title' style='color: #8e44ad; border-color: #8e44ad; margin-top: 0;'>📊 Daily Average per Employee</h4>`;
@@ -580,30 +608,6 @@
             html += `  </table>`;
             html += `</div>`;
           }
-        }
-
-        // --- SALTO DE PÁGINA 1 (Para imprimir) ---
-        html += `<div class='page-break'></div>`;
-
-        // --- 4. CHARTS (VISUAL ANALYTICS) ---
-        if (mode === 'charts' || mode === 'ai') {
-          html += `<div id='chartsContainer' style='margin-bottom: 25px; padding: 20px; background: #fff; border: 1px solid #eee; border-radius: 6px;'>
-                     <h4 class='section-title' style='color:#34495e; border-color:#34495e; margin-top:0;'>📊 Visual Analytics</h4>`;
-          if (isGlobal) {
-              if (data.channel === 'calls' || data.channel === 'both') html += `<div style='display: flex; justify-content: center; margin-bottom: 40px;'><div style='width: 60%;'><canvas id='callAnswerRateChart'></canvas></div></div>`;
-              html += `<div style='margin-bottom: 40px;'><canvas id='busiestDayChart'></canvas></div>`;
-              html += `<div style='margin-bottom: 40px;'><canvas id='busiestHourChart'></canvas></div>`;
-          } else if (isTeam) {
-              if (data.channel === 'calls' || data.channel === 'both') html += `<div style='margin-bottom: 40px;'><canvas id='teamCallsChart'></canvas></div>`;
-              if (data.channel === 'sms' || data.channel === 'both') html += `<div style='margin-bottom: 40px;'><canvas id='teamSmsChart'></canvas></div>`;
-              html += `<div style='margin-bottom: 40px;'><canvas id='teamPaceChart'></canvas></div>`;
-          } else {
-              if (data.channel === 'calls' || data.channel === 'both') html += `<div style='margin-bottom: 40px;'><canvas id='callsTimelineChart'></canvas></div>`;
-              if (data.channel === 'sms' || data.channel === 'both') html += `<div style='margin-bottom: 40px;'><canvas id='smsTimelineChart'></canvas></div>`;
-              html += `<div style='margin-bottom: 40px;'><canvas id='hourlyChart'></canvas></div>`;
-          }
-          html += `</div>`;
-        }
 
         // --- 5. SCHEDULE & ATTENDANCE ---
         if (isEmployee) {
