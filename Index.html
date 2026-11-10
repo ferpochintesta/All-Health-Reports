@@ -483,6 +483,7 @@
           html += `<h4 class='section-title title-calls' style='margin-top:0;'>📞 Phone Calls</h4>`;
           if (data.calls.total > 0) {
             html += `<ul><li><strong>Total Volume:</strong> ${data.calls.total} (${data.calls.inbound} Inbound | ${data.calls.outbound} Outbound)</li>
+                      <li><strong>Call Results:</strong> ${data.callResults.answered} Answered | ${data.callResults.missed} Missed | ${data.callResults.abandoned} Abandoned</li>
                       <li><strong>Average Handling Time:</strong> ${data.calls.ahtMin}m ${data.calls.ahtSec}s</li>
                       <li><strong>Total Talk Time:</strong> ${data.calls.talkHours} hours</li>
                       <li><strong>Daily Average:</strong> ~${data.calls.stats.avg} calls/day</li></ul>`;
